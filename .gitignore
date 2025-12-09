@@ -26,6 +26,10 @@ frontend/build/
 *.db
 *.sqlite
 *.sqlite3
+backend/data/
+
+# uv
+uv.lock
 
 # Environment
 .env
