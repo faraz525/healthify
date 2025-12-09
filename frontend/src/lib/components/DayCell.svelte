@@ -133,4 +133,32 @@
     display: flex;
     align-items: center;
   }
+
+  /* Mobile responsiveness */
+  @media (max-width: 480px) {
+    .day-cell {
+      gap: 2px;
+      padding: 2px;
+      border-radius: var(--radius-sm);
+    }
+
+    .day-number {
+      font-size: 0.8rem;
+    }
+
+    .indicators {
+      gap: 2px;
+    }
+
+    .stress-dot {
+      width: 6px;
+      height: 6px;
+    }
+
+    .workout-indicator svg,
+    .issue-indicator svg {
+      width: 10px;
+      height: 10px;
+    }
+  }
 </style>
