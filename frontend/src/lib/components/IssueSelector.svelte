@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { HealthIssue, IssueType } from '$lib/api';
 
-  export let issues: HealthIssue[] = [];
-  export let issueTypes: IssueType[] = [];
+  interface Props {
+    issues: HealthIssue[];
+    issueTypes: IssueType[];
+  }
 
-  let customIssue = '';
-  let showCustomInput = false;
+  let { issues = $bindable(), issueTypes }: Props = $props();
+
+  let customIssue = $state('');
+  let showCustomInput = $state(false);
 
   const iconMap: Record<string, string> = {
     heart: '❤️',
@@ -78,7 +82,7 @@
       <button
         class="issue-btn"
         class:selected={isSelected(type.name)}
-        on:click={() => toggleIssue(type)}
+        onclick={() => toggleIssue(type)}
       >
         <span class="issue-icon">{getIcon(type.icon)}</span>
         <span class="issue-name">{type.display_name}</span>
@@ -91,7 +95,7 @@
       {#each issues as issue, index}
         <div class="issue-badge">
           <span>{issue.notes || issue.issue_type.replace(/_/g, ' ')}</span>
-          <button class="remove-btn" on:click={() => removeIssue(index)} aria-label="Remove">
+          <button class="remove-btn" onclick={() => removeIssue(index)} aria-label="Remove">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
@@ -107,16 +111,15 @@
         type="text"
         bind:value={customIssue}
         placeholder="Describe the issue..."
-        on:keydown={handleCustomKeydown}
-        autofocus
+        onkeydown={handleCustomKeydown}
       />
-      <button class="btn btn-primary" on:click={addCustomIssue}>Add</button>
-      <button class="btn btn-secondary" on:click={() => { showCustomInput = false; customIssue = ''; }}>
+      <button class="btn btn-primary" onclick={addCustomIssue}>Add</button>
+      <button class="btn btn-secondary" onclick={() => { showCustomInput = false; customIssue = ''; }}>
         Cancel
       </button>
     </div>
   {:else}
-    <button class="add-custom-btn" on:click={() => showCustomInput = true}>
+    <button class="add-custom-btn" onclick={() => showCustomInput = true}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 5v14M5 12h14"/>
       </svg>

@@ -1,18 +1,20 @@
 <script lang="ts">
   import type { DailyEntry } from '$lib/api';
-  import { createEventDispatcher } from 'svelte';
 
-  export let day: number;
-  export let entry: DailyEntry | undefined = undefined;
-  export let isToday = false;
-  export let isFuture = false;
+  interface Props {
+    day: number;
+    entry?: DailyEntry;
+    isToday?: boolean;
+    isFuture?: boolean;
+    onclick?: () => void;
+  }
 
-  const dispatch = createEventDispatcher();
+  let { day, entry, isToday = false, isFuture = false, onclick }: Props = $props();
 
-  $: hasEntry = !!entry;
-  $: hasWorkout = entry?.worked_out ?? false;
-  $: hasIssues = (entry?.health_issues?.length ?? 0) > 0;
-  $: stressLevel = entry?.stress_level ?? null;
+  let hasEntry = $derived(!!entry);
+  let hasWorkout = $derived(entry?.worked_out ?? false);
+  let hasIssues = $derived((entry?.health_issues?.length ?? 0) > 0);
+  let stressLevel = $derived(entry?.stress_level ?? null);
 
   function getStressColor(level: number | null): string {
     if (level === null) return 'transparent';
@@ -28,7 +30,7 @@
   class:future={isFuture}
   class:has-entry={hasEntry}
   disabled={isFuture}
-  on:click={() => dispatch('click')}
+  {onclick}
 >
   <span class="day-number">{day}</span>
 

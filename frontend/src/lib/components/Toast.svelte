@@ -1,7 +1,7 @@
 <script lang="ts">
   import { toastMessage } from '$lib/stores/ui';
 
-  $: toast = $toastMessage;
+  let toast = $derived($toastMessage);
 
   function getIcon(type: string): string {
     switch (type) {

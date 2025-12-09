@@ -2,38 +2,40 @@
   import { entries, entriesByDate } from '$lib/stores/entries';
   import { issueTypes } from '$lib/stores/issueTypes';
   import { selectedDate, closeModal, showToast } from '$lib/stores/ui';
-  import type { DailyEntry, HealthIssue } from '$lib/api';
+  import type { HealthIssue } from '$lib/api';
   import StressSlider from './StressSlider.svelte';
   import WorkoutToggle from './WorkoutToggle.svelte';
   import IssueSelector from './IssueSelector.svelte';
 
-  $: date = $selectedDate;
-  $: existingEntry = date ? $entriesByDate.get(date) : undefined;
-  $: isEditing = !!existingEntry;
+  let date = $derived($selectedDate);
+  let existingEntry = $derived(date ? $entriesByDate.get(date) : undefined);
+  let isEditing = $derived(!!existingEntry);
 
-  let stressLevel: number | null = null;
-  let workedOut = false;
-  let workoutNotes = '';
-  let notes = '';
-  let healthIssues: HealthIssue[] = [];
-  let saving = false;
+  let stressLevel = $state<number | null>(null);
+  let workedOut = $state(false);
+  let workoutNotes = $state('');
+  let notes = $state('');
+  let healthIssues = $state<HealthIssue[]>([]);
+  let saving = $state(false);
 
   // Reset form when date changes
-  $: if (date) {
-    if (existingEntry) {
-      stressLevel = existingEntry.stress_level;
-      workedOut = existingEntry.worked_out;
-      workoutNotes = existingEntry.workout_notes || '';
-      notes = existingEntry.notes || '';
-      healthIssues = existingEntry.health_issues.map(i => ({ ...i }));
-    } else {
-      stressLevel = null;
-      workedOut = false;
-      workoutNotes = '';
-      notes = '';
-      healthIssues = [];
+  $effect(() => {
+    if (date) {
+      if (existingEntry) {
+        stressLevel = existingEntry.stress_level;
+        workedOut = existingEntry.worked_out;
+        workoutNotes = existingEntry.workout_notes || '';
+        notes = existingEntry.notes || '';
+        healthIssues = existingEntry.health_issues.map(i => ({ ...i }));
+      } else {
+        stressLevel = null;
+        workedOut = false;
+        workoutNotes = '';
+        notes = '';
+        healthIssues = [];
+      }
     }
-  }
+  });
 
   function formatDisplayDate(dateStr: string | null): string {
     if (!dateStr) return '';
@@ -108,17 +110,17 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_interactive_supports_focus -->
-<div class="modal-backdrop" on:click={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Entry form dialog">
+<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+<div class="modal-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Entry form dialog">
   <div class="modal animate-slide-up">
     <header class="modal-header">
       <div>
         <h2>{isEditing ? 'Edit Entry' : 'New Entry'}</h2>
         <p class="date-display">{formatDisplayDate(date)}</p>
       </div>
-      <button class="close-btn" on:click={closeModal} aria-label="Close">
+      <button class="close-btn" onclick={closeModal} aria-label="Close">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18 6L6 18M6 6l12 12"/>
         </svg>
@@ -165,15 +167,15 @@
 
     <footer class="modal-footer">
       {#if isEditing}
-        <button class="btn btn-danger" on:click={handleDelete} disabled={saving}>
+        <button class="btn btn-danger" onclick={handleDelete} disabled={saving}>
           Delete
         </button>
       {/if}
       <div class="footer-right">
-        <button class="btn btn-secondary" on:click={closeModal} disabled={saving}>
+        <button class="btn btn-secondary" onclick={closeModal} disabled={saving}>
           Cancel
         </button>
-        <button class="btn btn-primary" on:click={handleSave} disabled={saving}>
+        <button class="btn btn-primary" onclick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : (isEditing ? 'Update' : 'Save')}
         </button>
       </div>

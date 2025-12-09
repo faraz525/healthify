@@ -1,8 +1,12 @@
 <script lang="ts">
-  export let label: string;
-  export let value: string | number;
-  export let icon: string = '';
-  export let color: 'primary' | 'success' | 'warning' | 'danger' = 'primary';
+  interface Props {
+    label: string;
+    value: string | number;
+    icon?: string;
+    color?: 'primary' | 'success' | 'warning' | 'danger';
+  }
+
+  let { label, value, icon = '', color = 'primary' }: Props = $props();
 </script>
 
 <div class="stats-card stats-{color}">

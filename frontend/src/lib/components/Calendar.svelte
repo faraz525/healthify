@@ -3,22 +3,22 @@
   import { openModal } from '$lib/stores/ui';
   import DayCell from './DayCell.svelte';
 
-  let currentDate = new Date();
-  $: year = currentDate.getFullYear();
-  $: month = currentDate.getMonth();
+  let currentDate = $state(new Date());
 
-  $: monthName = currentDate.toLocaleString('default', { month: 'long' });
+  let year = $derived(currentDate.getFullYear());
+  let month = $derived(currentDate.getMonth());
+  let monthName = $derived(currentDate.toLocaleString('default', { month: 'long' }));
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  $: daysInMonth = new Date(year, month + 1, 0).getDate();
-  $: firstDayOfMonth = new Date(year, month, 1).getDay();
+  let daysInMonth = $derived(new Date(year, month + 1, 0).getDate());
+  let firstDayOfMonth = $derived(new Date(year, month, 1).getDay());
 
-  $: calendarDays = Array.from({ length: 42 }, (_, i) => {
+  let calendarDays = $derived(Array.from({ length: 42 }, (_, i) => {
     const dayNum = i - firstDayOfMonth + 1;
     if (dayNum < 1 || dayNum > daysInMonth) return null;
     return dayNum;
-  });
+  }));
 
   function formatDate(day: number): string {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -53,7 +53,7 @@
 
 <div class="calendar">
   <header class="calendar-header">
-    <button class="nav-btn" on:click={prevMonth} aria-label="Previous month">
+    <button class="nav-btn" onclick={prevMonth} aria-label="Previous month">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M15 18l-6-6 6-6"/>
       </svg>
@@ -61,10 +61,10 @@
 
     <div class="month-year">
       <h2>{monthName} {year}</h2>
-      <button class="today-btn" on:click={goToToday}>Today</button>
+      <button class="today-btn" onclick={goToToday}>Today</button>
     </div>
 
-    <button class="nav-btn" on:click={nextMonth} aria-label="Next month">
+    <button class="nav-btn" onclick={nextMonth} aria-label="Next month">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 18l6-6-6-6"/>
       </svg>
@@ -84,12 +84,13 @@
       {:else}
         {@const dateStr = formatDate(day)}
         {@const entry = $entriesByDate.get(dateStr)}
+        {@const dayIsFuture = isFuture(day)}
         <DayCell
           {day}
           {entry}
           isToday={isToday(day)}
-          isFuture={isFuture(day)}
-          on:click={() => !isFuture(day) && openModal(dateStr)}
+          isFuture={dayIsFuture}
+          onclick={() => !dayIsFuture && openModal(dateStr)}
         />
       {/if}
     {/each}

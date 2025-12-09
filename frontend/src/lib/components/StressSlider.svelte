@@ -1,5 +1,9 @@
 <script lang="ts">
-  export let value: number | null = null;
+  interface Props {
+    value: number | null;
+  }
+
+  let { value = $bindable() }: Props = $props();
 
   const levels = Array.from({ length: 10 }, (_, i) => i + 1);
 
@@ -31,7 +35,7 @@
         class:active={value === level}
         class:filled={value !== null && level <= value}
         style="--level-color: {getColor(level)}"
-        on:click={() => handleClick(level)}
+        onclick={() => handleClick(level)}
         aria-label="Stress level {level}"
       >
         {level}
