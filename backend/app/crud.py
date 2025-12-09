@@ -183,3 +183,228 @@ def seed_default_issue_types(db: Session):
         db.add(models.IssueType(**issue_type))
 
     db.commit()
+
+
+# Workout Routine CRUD Operations
+
+def get_workout_routines(db: Session, active_only: bool = True) -> list[models.WorkoutRoutine]:
+    query = db.query(models.WorkoutRoutine)
+    if active_only:
+        query = query.filter(models.WorkoutRoutine.is_active == True)
+    return query.all()
+
+
+def get_workout_routine(db: Session, routine_id: int) -> models.WorkoutRoutine | None:
+    return db.query(models.WorkoutRoutine).filter(models.WorkoutRoutine.id == routine_id).first()
+
+
+def create_workout_routine(db: Session, routine: schemas.WorkoutRoutineCreate) -> models.WorkoutRoutine:
+    db_routine = models.WorkoutRoutine(
+        name=routine.name,
+        description=routine.description,
+    )
+    db.add(db_routine)
+    db.flush()
+
+    for day_data in routine.days:
+        db_day = models.WorkoutDay(
+            routine_id=db_routine.id,
+            name=day_data.name,
+            day_of_week=day_data.day_of_week,
+            sort_order=day_data.sort_order,
+        )
+        db.add(db_day)
+        db.flush()
+
+        for exercise_data in day_data.exercises:
+            db_exercise = models.Exercise(
+                workout_day_id=db_day.id,
+                name=exercise_data.name,
+                target_sets=exercise_data.target_sets,
+                target_reps=exercise_data.target_reps,
+                target_weight=exercise_data.target_weight,
+                rest_seconds=exercise_data.rest_seconds,
+                notes=exercise_data.notes,
+                sort_order=exercise_data.sort_order,
+            )
+            db.add(db_exercise)
+
+    db.commit()
+    db.refresh(db_routine)
+    return db_routine
+
+
+def update_workout_routine(
+    db: Session,
+    routine_id: int,
+    routine_update: schemas.WorkoutRoutineUpdate
+) -> models.WorkoutRoutine | None:
+    db_routine = get_workout_routine(db, routine_id)
+    if not db_routine:
+        return None
+
+    update_data = routine_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_routine, field, value)
+
+    db.commit()
+    db.refresh(db_routine)
+    return db_routine
+
+
+def delete_workout_routine(db: Session, routine_id: int) -> bool:
+    db_routine = get_workout_routine(db, routine_id)
+    if not db_routine:
+        return False
+
+    db.delete(db_routine)
+    db.commit()
+    return True
+
+
+# Workout Day CRUD Operations
+
+def get_workout_day(db: Session, day_id: int) -> models.WorkoutDay | None:
+    return db.query(models.WorkoutDay).filter(models.WorkoutDay.id == day_id).first()
+
+
+def create_workout_day(
+    db: Session,
+    routine_id: int,
+    day: schemas.WorkoutDayCreate
+) -> models.WorkoutDay | None:
+    routine = get_workout_routine(db, routine_id)
+    if not routine:
+        return None
+
+    db_day = models.WorkoutDay(
+        routine_id=routine_id,
+        name=day.name,
+        day_of_week=day.day_of_week,
+        sort_order=day.sort_order,
+    )
+    db.add(db_day)
+    db.flush()
+
+    for exercise_data in day.exercises:
+        db_exercise = models.Exercise(
+            workout_day_id=db_day.id,
+            name=exercise_data.name,
+            target_sets=exercise_data.target_sets,
+            target_reps=exercise_data.target_reps,
+            target_weight=exercise_data.target_weight,
+            rest_seconds=exercise_data.rest_seconds,
+            notes=exercise_data.notes,
+            sort_order=exercise_data.sort_order,
+        )
+        db.add(db_exercise)
+
+    db.commit()
+    db.refresh(db_day)
+    return db_day
+
+
+def update_workout_day(
+    db: Session,
+    day_id: int,
+    day_update: schemas.WorkoutDayUpdate
+) -> models.WorkoutDay | None:
+    db_day = get_workout_day(db, day_id)
+    if not db_day:
+        return None
+
+    update_data = day_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_day, field, value)
+
+    db.commit()
+    db.refresh(db_day)
+    return db_day
+
+
+def delete_workout_day(db: Session, day_id: int) -> bool:
+    db_day = get_workout_day(db, day_id)
+    if not db_day:
+        return False
+
+    db.delete(db_day)
+    db.commit()
+    return True
+
+
+# Exercise CRUD Operations
+
+def get_exercise(db: Session, exercise_id: int) -> models.Exercise | None:
+    return db.query(models.Exercise).filter(models.Exercise.id == exercise_id).first()
+
+
+def create_exercise(
+    db: Session,
+    day_id: int,
+    exercise: schemas.ExerciseCreate
+) -> models.Exercise | None:
+    day = get_workout_day(db, day_id)
+    if not day:
+        return None
+
+    db_exercise = models.Exercise(
+        workout_day_id=day_id,
+        name=exercise.name,
+        target_sets=exercise.target_sets,
+        target_reps=exercise.target_reps,
+        target_weight=exercise.target_weight,
+        rest_seconds=exercise.rest_seconds,
+        notes=exercise.notes,
+        sort_order=exercise.sort_order,
+    )
+    db.add(db_exercise)
+    db.commit()
+    db.refresh(db_exercise)
+    return db_exercise
+
+
+def update_exercise(
+    db: Session,
+    exercise_id: int,
+    exercise_update: schemas.ExerciseUpdate
+) -> models.Exercise | None:
+    db_exercise = get_exercise(db, exercise_id)
+    if not db_exercise:
+        return None
+
+    update_data = exercise_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_exercise, field, value)
+
+    db.commit()
+    db.refresh(db_exercise)
+    return db_exercise
+
+
+def delete_exercise(db: Session, exercise_id: int) -> bool:
+    db_exercise = get_exercise(db, exercise_id)
+    if not db_exercise:
+        return False
+
+    db.delete(db_exercise)
+    db.commit()
+    return True
+
+
+def get_todays_workout(db: Session) -> models.WorkoutDay | None:
+    """Get the workout day scheduled for today based on day_of_week"""
+    today_dow = date.today().weekday()  # Monday=0, Sunday=6
+
+    # Get the active routine
+    routine = db.query(models.WorkoutRoutine).filter(
+        models.WorkoutRoutine.is_active == True
+    ).first()
+
+    if not routine:
+        return None
+
+    # Find the workout day for today
+    return db.query(models.WorkoutDay).filter(
+        models.WorkoutDay.routine_id == routine.id,
+        models.WorkoutDay.day_of_week == today_dow
+    ).first()

@@ -98,3 +98,134 @@ def get_stats(
 def get_today(db: Session = Depends(get_db)):
     """Get today's entry or null if not created"""
     return crud.get_daily_entry(db, date.today())
+
+
+# Workout Routine Endpoints
+
+@router.get("/workouts", response_model=list[schemas.WorkoutRoutine])
+def list_workout_routines(
+    active_only: bool = True,
+    db: Session = Depends(get_db)
+):
+    """Get all workout routines"""
+    return crud.get_workout_routines(db, active_only=active_only)
+
+
+@router.get("/workouts/today", response_model=Optional[schemas.WorkoutDay])
+def get_todays_workout(db: Session = Depends(get_db)):
+    """Get today's scheduled workout based on day of week"""
+    return crud.get_todays_workout(db)
+
+
+@router.get("/workouts/{routine_id}", response_model=schemas.WorkoutRoutine)
+def get_workout_routine(routine_id: int, db: Session = Depends(get_db)):
+    """Get a specific workout routine"""
+    routine = crud.get_workout_routine(db, routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Workout routine not found")
+    return routine
+
+
+@router.post("/workouts", response_model=schemas.WorkoutRoutine, status_code=201)
+def create_workout_routine(
+    routine: schemas.WorkoutRoutineCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new workout routine"""
+    return crud.create_workout_routine(db, routine)
+
+
+@router.put("/workouts/{routine_id}", response_model=schemas.WorkoutRoutine)
+def update_workout_routine(
+    routine_id: int,
+    routine_update: schemas.WorkoutRoutineUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update a workout routine"""
+    routine = crud.update_workout_routine(db, routine_id, routine_update)
+    if not routine:
+        raise HTTPException(status_code=404, detail="Workout routine not found")
+    return routine
+
+
+@router.delete("/workouts/{routine_id}", status_code=204)
+def delete_workout_routine(routine_id: int, db: Session = Depends(get_db)):
+    """Delete a workout routine"""
+    success = crud.delete_workout_routine(db, routine_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Workout routine not found")
+    return None
+
+
+# Workout Day Endpoints
+
+@router.post("/workouts/{routine_id}/days", response_model=schemas.WorkoutDay, status_code=201)
+def create_workout_day(
+    routine_id: int,
+    day: schemas.WorkoutDayCreate,
+    db: Session = Depends(get_db)
+):
+    """Add a day to a workout routine"""
+    result = crud.create_workout_day(db, routine_id, day)
+    if not result:
+        raise HTTPException(status_code=404, detail="Workout routine not found")
+    return result
+
+
+@router.put("/workouts/days/{day_id}", response_model=schemas.WorkoutDay)
+def update_workout_day(
+    day_id: int,
+    day_update: schemas.WorkoutDayUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update a workout day"""
+    day = crud.update_workout_day(db, day_id, day_update)
+    if not day:
+        raise HTTPException(status_code=404, detail="Workout day not found")
+    return day
+
+
+@router.delete("/workouts/days/{day_id}", status_code=204)
+def delete_workout_day(day_id: int, db: Session = Depends(get_db)):
+    """Delete a workout day"""
+    success = crud.delete_workout_day(db, day_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Workout day not found")
+    return None
+
+
+# Exercise Endpoints
+
+@router.post("/workouts/days/{day_id}/exercises", response_model=schemas.Exercise, status_code=201)
+def create_exercise(
+    day_id: int,
+    exercise: schemas.ExerciseCreate,
+    db: Session = Depends(get_db)
+):
+    """Add an exercise to a workout day"""
+    result = crud.create_exercise(db, day_id, exercise)
+    if not result:
+        raise HTTPException(status_code=404, detail="Workout day not found")
+    return result
+
+
+@router.put("/workouts/exercises/{exercise_id}", response_model=schemas.Exercise)
+def update_exercise(
+    exercise_id: int,
+    exercise_update: schemas.ExerciseUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update an exercise"""
+    exercise = crud.update_exercise(db, exercise_id, exercise_update)
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return exercise
+
+
+@router.delete("/workouts/exercises/{exercise_id}", status_code=204)
+def delete_exercise(exercise_id: int, db: Session = Depends(get_db)):
+    """Delete an exercise"""
+    success = crud.delete_exercise(db, exercise_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return None

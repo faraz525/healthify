@@ -9,6 +9,7 @@
 
   let { children } = $props();
   let loaded = $state(false);
+  let mobileMenuOpen = $state(false);
 
   onMount(async () => {
     const now = new Date();
@@ -24,6 +25,14 @@
     ]);
     loaded = true;
   });
+
+  function toggleMenu() {
+    mobileMenuOpen = !mobileMenuOpen;
+  }
+
+  function closeMenu() {
+    mobileMenuOpen = false;
+  }
 </script>
 
 <svelte:head>
@@ -38,11 +47,35 @@
         <span class="logo-icon">🌿</span>
         <span class="logo-text">Healthify</span>
       </a>
-      <nav class="nav">
+
+      <!-- Desktop Navigation -->
+      <nav class="nav desktop-nav">
         <a href="/" class="nav-link">Calendar</a>
+        <a href="/workouts" class="nav-link">Workouts</a>
         <a href="/stats" class="nav-link">Stats</a>
       </nav>
+
+      <!-- Mobile Hamburger Button -->
+      <button
+        class="hamburger-btn"
+        onclick={toggleMenu}
+        aria-label="Toggle menu"
+        aria-expanded={mobileMenuOpen}
+      >
+        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
+        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
+        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
+      </button>
     </div>
+
+    <!-- Mobile Navigation Menu -->
+    {#if mobileMenuOpen}
+      <nav class="mobile-nav">
+        <a href="/" class="mobile-nav-link" onclick={closeMenu}>Calendar</a>
+        <a href="/workouts" class="mobile-nav-link" onclick={closeMenu}>Workouts</a>
+        <a href="/stats" class="mobile-nav-link" onclick={closeMenu}>Stats</a>
+      </nav>
+    {/if}
   </header>
 
   <main class="app-main">
@@ -74,6 +107,7 @@
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
   }
 
   .app-header {
@@ -109,7 +143,8 @@
     color: var(--color-text);
   }
 
-  .nav {
+  /* Desktop Navigation */
+  .desktop-nav {
     display: flex;
     gap: var(--space-md);
   }
@@ -125,6 +160,65 @@
   .nav-link:hover {
     color: var(--color-text);
     background: var(--color-bg-hover);
+  }
+
+  /* Hamburger Button - Hidden on desktop */
+  .hamburger-btn {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+
+  .hamburger-line {
+    width: 24px;
+    height: 2px;
+    background: var(--color-text);
+    border-radius: 2px;
+    transition: all var(--transition-fast);
+  }
+
+  .hamburger-line.open:nth-child(1) {
+    transform: rotate(45deg) translate(5px, 5px);
+  }
+
+  .hamburger-line.open:nth-child(2) {
+    opacity: 0;
+  }
+
+  .hamburger-line.open:nth-child(3) {
+    transform: rotate(-45deg) translate(5px, -5px);
+  }
+
+  /* Mobile Navigation - Hidden by default */
+  .mobile-nav {
+    display: none;
+    flex-direction: column;
+    padding: 0 var(--space-lg) var(--space-lg);
+    border-top: 1px solid var(--color-border-light);
+    background: var(--color-bg-card);
+  }
+
+  .mobile-nav-link {
+    padding: var(--space-md) var(--space-sm);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    border-bottom: 1px solid var(--color-border-light);
+    transition: all var(--transition-fast);
+  }
+
+  .mobile-nav-link:last-child {
+    border-bottom: none;
+  }
+
+  .mobile-nav-link:hover {
+    color: var(--color-primary);
   }
 
   .app-main {
@@ -160,5 +254,36 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  /* Mobile Responsive */
+  @media (max-width: 600px) {
+    .header-content {
+      height: 60px;
+    }
+
+    .logo-icon {
+      font-size: 1.5rem;
+    }
+
+    .logo-text {
+      font-size: 1.25rem;
+    }
+
+    .desktop-nav {
+      display: none;
+    }
+
+    .hamburger-btn {
+      display: flex;
+    }
+
+    .mobile-nav {
+      display: flex;
+    }
+
+    .app-main {
+      padding: var(--space-lg) 0;
+    }
   }
 </style>

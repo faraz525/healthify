@@ -57,3 +57,48 @@ class IssueType(Base):
     icon = Column(String(50), nullable=True)  # For UI display
     is_active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
+
+
+class WorkoutRoutine(Base):
+    """A workout routine that contains multiple workout days"""
+    __tablename__ = "workout_routines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    days = relationship("WorkoutDay", back_populates="routine", cascade="all, delete-orphan")
+
+
+class WorkoutDay(Base):
+    """A day within a workout routine (e.g., Push Day, Pull Day)"""
+    __tablename__ = "workout_days"
+
+    id = Column(Integer, primary_key=True, index=True)
+    routine_id = Column(Integer, ForeignKey("workout_routines.id"), nullable=False)
+    name = Column(String(100), nullable=False)  # e.g., "Push Day", "Leg Day"
+    day_of_week = Column(Integer, nullable=True)  # 0=Monday, 6=Sunday, null=flexible
+    sort_order = Column(Integer, default=0)
+
+    routine = relationship("WorkoutRoutine", back_populates="days")
+    exercises = relationship("Exercise", back_populates="workout_day", cascade="all, delete-orphan")
+
+
+class Exercise(Base):
+    """An exercise within a workout day"""
+    __tablename__ = "exercises"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workout_day_id = Column(Integer, ForeignKey("workout_days.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    target_sets = Column(Integer, nullable=True)
+    target_reps = Column(String(50), nullable=True)  # e.g., "8-12", "10", "5x5"
+    target_weight = Column(String(50), nullable=True)  # e.g., "135 lbs", "60 kg"
+    rest_seconds = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    sort_order = Column(Integer, default=0)
+
+    workout_day = relationship("WorkoutDay", back_populates="exercises")

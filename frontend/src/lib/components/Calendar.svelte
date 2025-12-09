@@ -182,4 +182,44 @@
   .day-cell.empty {
     aspect-ratio: 1;
   }
+
+  /* Mobile responsiveness */
+  @media (max-width: 480px) {
+    .calendar {
+      padding: var(--space-md);
+      border-radius: var(--radius-lg);
+    }
+
+    .calendar-header {
+      margin-bottom: var(--space-md);
+    }
+
+    .month-year {
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .month-year h2 {
+      font-size: 1.25rem;
+    }
+
+    .nav-btn {
+      width: 36px;
+      height: 36px;
+    }
+
+    .today-btn {
+      padding: var(--space-xs) var(--space-sm);
+      font-size: 0.75rem;
+    }
+
+    .weekday {
+      font-size: 0.65rem;
+      padding: var(--space-xs);
+    }
+
+    .days-grid {
+      gap: 2px;
+    }
+  }
 </style>
