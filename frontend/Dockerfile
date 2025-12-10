@@ -12,6 +12,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Set API URL for production (uses nginx proxy)
+ENV VITE_API_URL=/api
+
 # Build the app
 RUN npm run build
 
