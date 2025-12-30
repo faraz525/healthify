@@ -1,50 +1,52 @@
 <script lang="ts">
   import { workoutTypes, type WorkoutType } from '$lib/config/workoutTypes';
+  import type { WorkoutDay } from '$lib/api';
 
   interface Props {
     value: string | null;
+    routineDays?: WorkoutDay[];
     onchange?: (value: string | null) => void;
   }
 
-  let { value = $bindable(), onchange }: Props = $props();
+  let { value = $bindable(), routineDays = [], onchange }: Props = $props();
 
-  function selectType(type: WorkoutType) {
-    if (value === type.id) {
+  function selectType(id: string) {
+    if (value === id) {
       value = null;
     } else {
-      value = type.id;
+      value = id;
     }
     onchange?.(value);
   }
 
-  function isSelected(typeId: string): boolean {
-    return value === typeId;
+  function isSelected(id: string): boolean {
+    return value === id;
   }
 
-  // Group by category for visual organization
-  const strengthTypes = workoutTypes.filter(t => t.category === 'strength');
+  // Group predefined types by category
   const cardioTypes = workoutTypes.filter(t => t.category === 'cardio');
   const flexibilityTypes = workoutTypes.filter(t => t.category === 'flexibility');
   const recoveryTypes = workoutTypes.filter(t => t.category === 'recovery');
 </script>
 
 <div class="workout-type-selector">
-  <div class="type-section">
-    <span class="section-label">Strength</span>
-    <div class="type-grid">
-      {#each strengthTypes as type}
-        <button
-          class="type-btn"
-          class:selected={isSelected(type.id)}
-          onclick={() => selectType(type)}
-          type="button"
-        >
-          <span class="type-emoji">{type.emoji}</span>
-          <span class="type-label">{type.label}</span>
-        </button>
-      {/each}
+  {#if routineDays.length > 0}
+    <div class="type-section">
+      <span class="section-label">My Routines</span>
+      <div class="type-grid routine-grid">
+        {#each routineDays as day}
+          <button
+            class="type-btn routine"
+            class:selected={isSelected(day.name)}
+            onclick={() => selectType(day.name)}
+            type="button"
+          >
+            <span class="type-label">{day.name}</span>
+          </button>
+        {/each}
+      </div>
     </div>
-  </div>
+  {/if}
 
   <div class="type-section">
     <span class="section-label">Cardio</span>
@@ -53,7 +55,7 @@
         <button
           class="type-btn cardio"
           class:selected={isSelected(type.id)}
-          onclick={() => selectType(type)}
+          onclick={() => selectType(type.id)}
           type="button"
         >
           <span class="type-emoji">{type.emoji}</span>
@@ -70,7 +72,7 @@
         <button
           class="type-btn flex"
           class:selected={isSelected(type.id)}
-          onclick={() => selectType(type)}
+          onclick={() => selectType(type.id)}
           type="button"
         >
           <span class="type-emoji">{type.emoji}</span>
@@ -108,17 +110,22 @@
     gap: var(--space-sm);
   }
 
+  .routine-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+
   .type-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: var(--space-xs);
     padding: var(--space-sm);
     border-radius: var(--radius-md);
     background: var(--color-bg);
     border: 2px solid var(--color-border);
     transition: all var(--transition-fast);
-    min-height: 70px;
+    min-height: 50px;
   }
 
   .type-btn:hover {
@@ -127,6 +134,16 @@
   }
 
   .type-btn.selected {
+    border-color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.1);
+  }
+
+  .type-btn.routine {
+    min-height: 44px;
+  }
+
+  .type-btn.routine:hover,
+  .type-btn.routine.selected {
     border-color: var(--color-primary);
     background: rgba(var(--color-primary-rgb), 0.1);
   }
@@ -144,11 +161,11 @@
   }
 
   .type-emoji {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
 
   .type-label {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: var(--color-text-muted);
     text-align: center;
@@ -162,16 +179,20 @@
 
   @media (max-width: 480px) {
     .type-grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .routine-grid {
+      grid-template-columns: repeat(2, 1fr);
     }
 
     .type-btn {
-      min-height: 60px;
+      min-height: 44px;
       padding: var(--space-xs);
     }
 
     .type-emoji {
-      font-size: 1.25rem;
+      font-size: 1rem;
     }
 
     .type-label {

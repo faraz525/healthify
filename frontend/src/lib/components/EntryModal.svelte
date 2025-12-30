@@ -2,7 +2,8 @@
   import { entries, entriesByDate } from '$lib/stores/entries';
   import { issueTypes } from '$lib/stores/issueTypes';
   import { selectedDate, closeModal, showToast } from '$lib/stores/ui';
-  import type { HealthIssue } from '$lib/api';
+  import { api, type HealthIssue, type WorkoutDay } from '$lib/api';
+  import { onMount } from 'svelte';
   import StressSlider from './StressSlider.svelte';
   import WorkoutToggle from './WorkoutToggle.svelte';
   import WorkoutTypeSelector from './WorkoutTypeSelector.svelte';
@@ -19,6 +20,21 @@
   let notes = $state('');
   let healthIssues = $state<HealthIssue[]>([]);
   let saving = $state(false);
+  let routineDays = $state<WorkoutDay[]>([]);
+
+  // Fetch workout routines on mount
+  onMount(async () => {
+    try {
+      const routines = await api.getWorkoutRoutines();
+      // Get all days from all routines (or just active one)
+      const activeRoutine = routines.find(r => r.is_active) || routines[0];
+      if (activeRoutine) {
+        routineDays = activeRoutine.days;
+      }
+    } catch (e) {
+      console.error('Failed to load routines:', e);
+    }
+  });
 
   // Reset form when date changes
   $effect(() => {
@@ -144,7 +160,7 @@
         {#if workedOut}
           <div class="workout-details animate-slide-up">
             <h4>What type of workout?</h4>
-            <WorkoutTypeSelector bind:value={workoutType} />
+            <WorkoutTypeSelector bind:value={workoutType} {routineDays} />
             <textarea
               bind:value={workoutNotes}
               placeholder="Additional notes (optional)"
