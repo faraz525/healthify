@@ -17,8 +17,8 @@
     await loadData();
   });
 
-  async function loadData() {
-    loading = true;
+  async function loadData(showLoading = true) {
+    if (showLoading) loading = true;
     try {
       const [routinesData, todaysData] = await Promise.all([
         api.getWorkoutRoutines(),
@@ -34,6 +34,10 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function refreshData() {
+    await loadData(false);
   }
 
   function getDayName(dayOfWeek: number | null): string {
@@ -112,7 +116,7 @@
   async function handleUpdateExercise(exerciseId: number, field: string, value: string | number | null) {
     try {
       await api.updateExercise(exerciseId, { [field]: value });
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to update exercise:', e);
     }
@@ -136,7 +140,7 @@
   async function handleDeleteExercise(exerciseId: number) {
     try {
       await api.deleteExercise(exerciseId);
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to delete exercise:', e);
     }
@@ -145,7 +149,7 @@
   async function handleUpdateDay(dayId: number, field: string, value: string | number | null) {
     try {
       await api.updateWorkoutDay(dayId, { [field]: value });
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to update day:', e);
     }
@@ -154,7 +158,7 @@
   async function handleDeleteDay(dayId: number) {
     try {
       await api.deleteWorkoutDay(dayId);
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to delete day:', e);
     }
