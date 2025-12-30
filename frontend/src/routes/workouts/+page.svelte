@@ -118,6 +118,20 @@
     }
   }
 
+  function adjustWeight(exercise: Exercise, delta: number) {
+    const currentWeight = exercise.target_weight || '0';
+    // Extract numeric value from weight string (e.g., "135 lbs" -> 135)
+    const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
+    const numericWeight = match ? parseFloat(match[1]) : 0;
+    const newWeight = Math.max(0, numericWeight + delta);
+    // Preserve the unit if it exists, otherwise default to 'lbs'
+    const unit = currentWeight.match(/\s*(\w+)$/)?.[1] || 'lbs';
+    const newWeightStr = newWeight > 0 ? `${newWeight} ${unit}` : null;
+    if (exercise.id) {
+      handleUpdateExercise(exercise.id, 'target_weight', newWeightStr);
+    }
+  }
+
   async function handleDeleteExercise(exerciseId: number) {
     try {
       await api.deleteExercise(exerciseId);
@@ -345,14 +359,29 @@
                                 onblur={(e) => handleUpdateExercise(exercise.id!, 'target_reps', (e.target as HTMLInputElement).value || null)}
                               />
                             </div>
-                            <div class="detail-input-group">
-                              <label>Weight</label>
-                              <input
-                                type="text"
-                                value={exercise.target_weight ?? ''}
-                                placeholder="135 lbs"
-                                onblur={(e) => handleUpdateExercise(exercise.id!, 'target_weight', (e.target as HTMLInputElement).value || null)}
-                              />
+                            <div class="detail-input-group weight-group">
+                              <label>🏋️ Weight</label>
+                              <div class="weight-controls">
+                                <button
+                                  type="button"
+                                  class="weight-btn minus"
+                                  onclick={() => adjustWeight(exercise, -5)}
+                                  title="Decrease by 5"
+                                >-5</button>
+                                <input
+                                  type="text"
+                                  class="weight-input"
+                                  value={exercise.target_weight ?? ''}
+                                  placeholder="135 lbs"
+                                  onblur={(e) => handleUpdateExercise(exercise.id!, 'target_weight', (e.target as HTMLInputElement).value || null)}
+                                />
+                                <button
+                                  type="button"
+                                  class="weight-btn plus"
+                                  onclick={() => adjustWeight(exercise, 5)}
+                                  title="Increase by 5"
+                                >+5</button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -793,6 +822,61 @@
     border-color: var(--color-primary);
   }
 
+  .weight-group {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .weight-group label {
+    color: var(--color-warning);
+    font-weight: 600;
+  }
+
+  .weight-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .weight-input {
+    flex: 1;
+    text-align: center;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .weight-btn {
+    width: 32px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+  }
+
+  .weight-btn.minus {
+    background: var(--color-danger-light);
+    color: var(--color-danger);
+  }
+
+  .weight-btn.minus:hover {
+    background: var(--color-danger);
+    color: white;
+  }
+
+  .weight-btn.plus {
+    background: var(--color-success-light);
+    color: var(--color-success);
+  }
+
+  .weight-btn.plus:hover {
+    background: var(--color-success);
+    color: white;
+  }
+
   .add-exercise-btn {
     padding: var(--space-sm);
     border: 1px dashed var(--color-border);
@@ -931,6 +1015,18 @@
 
     .detail-input-group input {
       width: 100%;
+    }
+
+    .weight-group {
+      min-width: 100%;
+    }
+
+    .weight-controls {
+      width: 100%;
+    }
+
+    .weight-btn {
+      width: 40px;
     }
   }
 </style>

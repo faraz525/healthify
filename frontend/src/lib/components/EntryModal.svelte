@@ -5,6 +5,7 @@
   import type { HealthIssue } from '$lib/api';
   import StressSlider from './StressSlider.svelte';
   import WorkoutToggle from './WorkoutToggle.svelte';
+  import WorkoutTypeSelector from './WorkoutTypeSelector.svelte';
   import IssueSelector from './IssueSelector.svelte';
 
   let date = $derived($selectedDate);
@@ -13,6 +14,7 @@
 
   let stressLevel = $state<number | null>(null);
   let workedOut = $state(false);
+  let workoutType = $state<string | null>(null);
   let workoutNotes = $state('');
   let notes = $state('');
   let healthIssues = $state<HealthIssue[]>([]);
@@ -24,12 +26,14 @@
       if (existingEntry) {
         stressLevel = existingEntry.stress_level;
         workedOut = existingEntry.worked_out;
+        workoutType = existingEntry.workout_type || null;
         workoutNotes = existingEntry.workout_notes || '';
         notes = existingEntry.notes || '';
         healthIssues = existingEntry.health_issues.map(i => ({ ...i }));
       } else {
         stressLevel = null;
         workedOut = false;
+        workoutType = null;
         workoutNotes = '';
         notes = '';
         healthIssues = [];
@@ -57,6 +61,7 @@
         date,
         stress_level: stressLevel,
         worked_out: workedOut,
+        workout_type: workedOut ? workoutType : null,
         workout_notes: workoutNotes || null,
         notes: notes || null,
         health_issues: healthIssues.map(({ issue_type, severity, notes, time_of_day }) => ({
@@ -137,10 +142,12 @@
         <h3>Did you work out?</h3>
         <WorkoutToggle bind:checked={workedOut} />
         {#if workedOut}
-          <div class="workout-notes animate-slide-up">
+          <div class="workout-details animate-slide-up">
+            <h4>What type of workout?</h4>
+            <WorkoutTypeSelector bind:value={workoutType} />
             <textarea
               bind:value={workoutNotes}
-              placeholder="What did you do? (optional)"
+              placeholder="Additional notes (optional)"
               rows="2"
             ></textarea>
           </div>
@@ -274,8 +281,18 @@
     border-color: var(--color-primary);
   }
 
-  .workout-notes {
+  .workout-details {
     margin-top: var(--space-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .workout-details h4 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    margin: 0;
   }
 
   .modal-footer {

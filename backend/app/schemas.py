@@ -27,6 +27,7 @@ class DailyEntryBase(BaseModel):
     date: date
     stress_level: Optional[int] = Field(None, ge=1, le=10)
     worked_out: bool = False
+    workout_type: Optional[str] = None  # e.g., "chest", "back", "cardio", "yoga"
     workout_notes: Optional[str] = None
     notes: Optional[str] = None
 
@@ -38,6 +39,7 @@ class DailyEntryCreate(DailyEntryBase):
 class DailyEntryUpdate(BaseModel):
     stress_level: Optional[int] = Field(None, ge=1, le=10)
     worked_out: Optional[bool] = None
+    workout_type: Optional[str] = None
     workout_notes: Optional[str] = None
     notes: Optional[str] = None
     health_issues: Optional[list[HealthIssueCreate]] = None

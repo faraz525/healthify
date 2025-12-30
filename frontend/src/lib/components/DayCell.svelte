@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DailyEntry } from '$lib/api';
+  import { getWorkoutEmoji } from '$lib/config/workoutTypes';
 
   interface Props {
     day: number;
@@ -13,6 +14,8 @@
 
   let hasEntry = $derived(!!entry);
   let hasWorkout = $derived(entry?.worked_out ?? false);
+  let workoutType = $derived(entry?.workout_type ?? null);
+  let workoutEmoji = $derived(hasWorkout ? getWorkoutEmoji(workoutType) : null);
   let hasIssues = $derived((entry?.health_issues?.length ?? 0) > 0);
   let stressLevel = $derived(entry?.stress_level ?? null);
 
@@ -44,10 +47,8 @@
         ></div>
       {/if}
       {#if hasWorkout}
-        <div class="workout-indicator" title="Worked out">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/>
-          </svg>
+        <div class="workout-indicator" title={workoutType ? workoutType.replace('_', ' ') : 'Worked out'}>
+          <span class="workout-emoji">{workoutEmoji}</span>
         </div>
       {/if}
       {#if hasIssues}
@@ -123,9 +124,13 @@
   }
 
   .workout-indicator {
-    color: var(--color-success);
     display: flex;
     align-items: center;
+  }
+
+  .workout-emoji {
+    font-size: 0.75rem;
+    line-height: 1;
   }
 
   .issue-indicator {
@@ -155,7 +160,10 @@
       height: 6px;
     }
 
-    .workout-indicator svg,
+    .workout-emoji {
+      font-size: 0.65rem;
+    }
+
     .issue-indicator svg {
       width: 10px;
       height: 10px;

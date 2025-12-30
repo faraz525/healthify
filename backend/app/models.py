@@ -48,6 +48,7 @@ class DailyEntry(Base):
     # Core metrics
     stress_level = Column(Integer, nullable=True)  # 1-10 scale
     worked_out = Column(Boolean, default=False)
+    workout_type = Column(String(50), nullable=True)  # e.g., "chest", "back", "cardio", "yoga"
     workout_notes = Column(Text, nullable=True)
 
     # General notes

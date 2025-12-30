@@ -42,6 +42,7 @@ export interface DailyEntry {
   date: string;
   stress_level: number | null;
   worked_out: boolean;
+  workout_type: string | null;
   workout_notes: string | null;
   notes: string | null;
   health_issues: HealthIssue[];
