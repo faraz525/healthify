@@ -51,17 +51,49 @@ docker-compose up        # Run both services (backend:8000, frontend:3000)
 - **API prefix**: All backend endpoints are under `/api`
 - **Async throughout**: Backend uses async SQLAlchemy with aiosqlite
 
+## Authentication
+
+JWT-based authentication with refresh tokens, following the CrateDrop pattern.
+
+**Backend** (`backend/app/auth.py`, `backend/app/auth_routes.py`):
+- Access tokens: 15 min expiry, stored in localStorage
+- Refresh tokens: 30 days expiry, SHA-256 hashed in database
+- Password hashing: bcrypt via passlib
+- FastAPI dependencies: `get_current_user()`, `get_current_admin()`
+
+**Frontend** (`frontend/src/lib/stores/auth.ts`, `frontend/src/lib/api.ts`):
+- Auth state managed in Svelte store
+- Automatic token refresh on 401 responses
+- Protected routes redirect to `/login`
+
+**Auth Endpoints**:
+- `POST /api/auth/signup` - Register new user
+- `POST /api/auth/login` - Login, returns tokens
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - Revoke refresh token
+- `GET /api/auth/me` - Get current user
+
+**User Roles**:
+- First user with email matching `admin_email` config becomes admin
+- Admin email configured in `backend/app/config.py` (default: `farazq638@gmail.com`)
+
 ## Database
 
 SQLite database at `./data/healthify.db` (configurable via `DATABASE_URL` env var).
 
-Tables: `daily_entries`, `health_issues`, `issue_types`
+Tables: `users`, `refresh_tokens`, `daily_entries`, `health_issues`, `issue_types`, `workout_routines`, `exercises`
+
+- `users` - User accounts with email, password_hash, role
+- `refresh_tokens` - Hashed refresh tokens with expiry
+- `daily_entries` - Per-user daily health entries (unique on user_id + date)
+- `workout_routines` - Per-user workout routines
 
 Default issue types are seeded on first startup.
 
 ## Environment Variables
 
 - `DATABASE_URL` - SQLite path (default: `./data/healthify.db`)
+- `JWT_SECRET` - Secret key for JWT signing (required in production)
 - `VITE_API_URL` - Frontend API base URL (default: `/api` in production, `http://localhost:8000/api` for local dev)
 
 ## Production Deployment (Raspberry Pi)
@@ -98,8 +130,34 @@ Data is stored on the SSD at `/mnt/ssd/apps/healthify/data/` (mounted as `/app/d
 - `frontend/nginx.conf` - Reverse proxy config for API
 
 ### Rebuilding
-If changing API configuration, must rebuild frontend (Vite bakes env vars at build time):
+
+**Important**: Use legacy Docker builder on Raspberry Pi. BuildKit causes npm to fail with "Exit handler never called".
+
 ```bash
-docker compose build --no-cache frontend
+# Rebuild frontend (required when changing frontend code or env vars)
+DOCKER_BUILDKIT=0 docker compose build --no-cache frontend
 docker compose up -d frontend
+
+# Rebuild backend
+DOCKER_BUILDKIT=0 docker compose build --no-cache backend
+docker compose up -d backend
+
+# Full rebuild
+docker compose down
+DOCKER_BUILDKIT=0 docker compose build --no-cache
+docker compose up -d
 ```
+
+### Environment Setup
+
+Create `.env` file in project root:
+```bash
+# Generate a secure JWT secret
+JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+echo "JWT_SECRET=$JWT_SECRET" > .env
+```
+
+### Known Issues
+
+- **Docker BuildKit on Pi**: BuildKit causes npm install to hang. Always use `DOCKER_BUILDKIT=0`.
+- **bcrypt version**: Must pin `bcrypt==4.0.1` in requirements.txt. Newer versions have compatibility issues with passlib on ARM64.

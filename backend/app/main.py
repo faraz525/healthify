@@ -6,6 +6,7 @@ from .config import get_settings
 from .database import engine, SessionLocal
 from .models import Base
 from .routes import router
+from .auth_routes import router as auth_router
 from .crud import seed_default_issue_types
 
 settings = get_settings()
@@ -42,6 +43,7 @@ app.add_middleware(
 
 # Include routes
 app.include_router(router)
+app.include_router(auth_router)
 
 
 @app.get("/")

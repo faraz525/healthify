@@ -1,15 +1,49 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text, ForeignKey, JSON
+import uuid
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
 
 
+class User(Base):
+    """User account for authentication"""
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="user")  # "admin" or "user"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    daily_entries = relationship("DailyEntry", back_populates="user", cascade="all, delete-orphan")
+    workout_routines = relationship("WorkoutRoutine", back_populates="user", cascade="all, delete-orphan")
+    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+
+
+class RefreshToken(Base):
+    """Refresh tokens for session management"""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String(64), nullable=False, index=True)  # SHA-256 hash
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="refresh_tokens")
+
+
 class DailyEntry(Base):
-    """Main daily health entry - one per day"""
+    """Main daily health entry - one per day per user"""
     __tablename__ = "daily_entries"
+    __table_args__ = (UniqueConstraint('user_id', 'date', name='uix_user_date'),)
 
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, unique=True, index=True, nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    date = Column(Date, index=True, nullable=False)
 
     # Core metrics
     stress_level = Column(Integer, nullable=True)  # 1-10 scale
@@ -24,6 +58,7 @@ class DailyEntry(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
+    user = relationship("User", back_populates="daily_entries")
     health_issues = relationship("HealthIssue", back_populates="daily_entry", cascade="all, delete-orphan")
 
     # Future extensibility: store arbitrary metrics from devices
@@ -64,12 +99,14 @@ class WorkoutRoutine(Base):
     __tablename__ = "workout_routines"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    user = relationship("User", back_populates="workout_routines")
     days = relationship("WorkoutDay", back_populates="routine", cascade="all, delete-orphan")
 
 

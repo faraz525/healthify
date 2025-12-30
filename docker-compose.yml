@@ -9,6 +9,9 @@ services:
       - /mnt/ssd/apps/healthify/data:/app/data
     environment:
       - DATABASE_URL=sqlite:///./data/healthify.db
+      - JWT_SECRET=${JWT_SECRET}
+    env_file:
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s

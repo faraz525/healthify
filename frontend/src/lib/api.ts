@@ -1,4 +1,31 @@
+import { browser } from '$app/environment';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// Token management
+let accessToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+// Auth types
+export interface User {
+  id: string;
+  email: string;
+  role: 'admin' | 'user';
+  created_at: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  user: User;
+}
 
 export interface HealthIssue {
   id?: number;
@@ -71,21 +98,89 @@ export interface WorkoutRoutine {
   updated_at?: string | null;
 }
 
+// Flag to prevent multiple refresh attempts
+let isRefreshing = false;
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (isRefreshing) return false;
+  isRefreshing = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (response.ok) {
+      const data: AuthResponse = await response.json();
+      accessToken = data.access_token;
+      if (browser) {
+        localStorage.setItem('accessToken', data.access_token);
+      }
+      isRefreshing = false;
+      return true;
+    }
+  } catch {
+    // Refresh failed
+  }
+
+  isRefreshing = false;
+  return false;
+}
+
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
     ...options,
+    headers,
+    credentials: 'include',
   });
+
+  // Handle 401 - try refresh (but not for auth endpoints)
+  if (response.status === 401 && !endpoint.startsWith('/auth/')) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Retry with new token
+      headers['Authorization'] = `Bearer ${accessToken}`;
+      const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+
+      if (retryResponse.ok) {
+        if (retryResponse.status === 204) {
+          return null as T;
+        }
+        return retryResponse.json();
+      }
+    }
+
+    // Refresh failed, redirect to login
+    if (browser) {
+      localStorage.removeItem('accessToken');
+      window.location.href = '/login';
+    }
+    throw new Error('Session expired');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
+    const message = typeof error.detail === 'string'
+      ? error.detail
+      : error.detail?.message || `HTTP ${response.status}`;
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -94,6 +189,29 @@ async function fetchApi<T>(
 
   return response.json();
 }
+
+// Auth API
+export const authApi = {
+  signup: (email: string, password: string) =>
+    fetchApi<AuthResponse>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  login: (email: string, password: string) =>
+    fetchApi<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logout: () =>
+    fetchApi<{ message: string }>('/auth/logout', { method: 'POST' }),
+
+  refresh: () =>
+    fetchApi<AuthResponse>('/auth/refresh', { method: 'POST' }),
+
+  getMe: () => fetchApi<User>('/auth/me'),
+};
 
 export const api = {
   // Entries

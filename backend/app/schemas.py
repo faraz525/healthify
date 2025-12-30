@@ -163,3 +163,39 @@ class WorkoutRoutine(WorkoutRoutineBase):
 
     class Config:
         from_attributes = True
+
+
+# Auth Schemas
+class UserBase(BaseModel):
+    email: str
+
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+
+
+class UserLogin(UserBase):
+    password: str
+
+
+class UserResponse(UserBase):
+    id: str
+    role: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    user: UserResponse
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class MessageResponse(BaseModel):
+    message: str

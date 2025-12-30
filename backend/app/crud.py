@@ -4,22 +4,29 @@ from datetime import date, timedelta
 from . import models, schemas
 
 
-def get_daily_entry(db: Session, entry_date: date) -> models.DailyEntry | None:
-    return db.query(models.DailyEntry).filter(models.DailyEntry.date == entry_date).first()
+def get_daily_entry(db: Session, user_id: str, entry_date: date) -> models.DailyEntry | None:
+    return db.query(models.DailyEntry).filter(
+        models.DailyEntry.user_id == user_id,
+        models.DailyEntry.date == entry_date
+    ).first()
 
 
-def get_daily_entry_by_id(db: Session, entry_id: int) -> models.DailyEntry | None:
-    return db.query(models.DailyEntry).filter(models.DailyEntry.id == entry_id).first()
+def get_daily_entry_by_id(db: Session, user_id: str, entry_id: int) -> models.DailyEntry | None:
+    return db.query(models.DailyEntry).filter(
+        models.DailyEntry.user_id == user_id,
+        models.DailyEntry.id == entry_id
+    ).first()
 
 
 def get_daily_entries(
     db: Session,
+    user_id: str,
     skip: int = 0,
     limit: int = 30,
     start_date: date | None = None,
     end_date: date | None = None
 ) -> list[models.DailyEntry]:
-    query = db.query(models.DailyEntry)
+    query = db.query(models.DailyEntry).filter(models.DailyEntry.user_id == user_id)
 
     if start_date:
         query = query.filter(models.DailyEntry.date >= start_date)
@@ -29,8 +36,9 @@ def get_daily_entries(
     return query.order_by(desc(models.DailyEntry.date)).offset(skip).limit(limit).all()
 
 
-def create_daily_entry(db: Session, entry: schemas.DailyEntryCreate) -> models.DailyEntry:
+def create_daily_entry(db: Session, user_id: str, entry: schemas.DailyEntryCreate) -> models.DailyEntry:
     db_entry = models.DailyEntry(
+        user_id=user_id,
         date=entry.date,
         stress_level=entry.stress_level,
         worked_out=entry.worked_out,
@@ -57,10 +65,11 @@ def create_daily_entry(db: Session, entry: schemas.DailyEntryCreate) -> models.D
 
 def update_daily_entry(
     db: Session,
+    user_id: str,
     entry_date: date,
     entry_update: schemas.DailyEntryUpdate
 ) -> models.DailyEntry | None:
-    db_entry = get_daily_entry(db, entry_date)
+    db_entry = get_daily_entry(db, user_id, entry_date)
     if not db_entry:
         return None
 
@@ -89,8 +98,8 @@ def update_daily_entry(
     return db_entry
 
 
-def delete_daily_entry(db: Session, entry_date: date) -> bool:
-    db_entry = get_daily_entry(db, entry_date)
+def delete_daily_entry(db: Session, user_id: str, entry_date: date) -> bool:
+    db_entry = get_daily_entry(db, user_id, entry_date)
     if not db_entry:
         return False
 
@@ -114,10 +123,11 @@ def create_issue_type(db: Session, issue_type: schemas.IssueTypeCreate) -> model
     return db_issue_type
 
 
-def get_stats(db: Session, days: int = 30) -> dict:
+def get_stats(db: Session, user_id: str, days: int = 30) -> dict:
     start_date = date.today() - timedelta(days=days)
 
     entries = db.query(models.DailyEntry).filter(
+        models.DailyEntry.user_id == user_id,
         models.DailyEntry.date >= start_date
     ).all()
 
@@ -132,6 +142,7 @@ def get_stats(db: Session, days: int = 30) -> dict:
         models.HealthIssue.issue_type,
         func.count(models.HealthIssue.id).label("count")
     ).join(models.DailyEntry).filter(
+        models.DailyEntry.user_id == user_id,
         models.DailyEntry.date >= start_date
     ).group_by(models.HealthIssue.issue_type).order_by(
         desc("count")
@@ -144,6 +155,7 @@ def get_stats(db: Session, days: int = 30) -> dict:
     check_date = date.today()
     while True:
         entry = db.query(models.DailyEntry).filter(
+            models.DailyEntry.user_id == user_id,
             models.DailyEntry.date == check_date
         ).first()
         if entry:
@@ -187,19 +199,23 @@ def seed_default_issue_types(db: Session):
 
 # Workout Routine CRUD Operations
 
-def get_workout_routines(db: Session, active_only: bool = True) -> list[models.WorkoutRoutine]:
-    query = db.query(models.WorkoutRoutine)
+def get_workout_routines(db: Session, user_id: str, active_only: bool = True) -> list[models.WorkoutRoutine]:
+    query = db.query(models.WorkoutRoutine).filter(models.WorkoutRoutine.user_id == user_id)
     if active_only:
         query = query.filter(models.WorkoutRoutine.is_active == True)
     return query.all()
 
 
-def get_workout_routine(db: Session, routine_id: int) -> models.WorkoutRoutine | None:
-    return db.query(models.WorkoutRoutine).filter(models.WorkoutRoutine.id == routine_id).first()
+def get_workout_routine(db: Session, user_id: str, routine_id: int) -> models.WorkoutRoutine | None:
+    return db.query(models.WorkoutRoutine).filter(
+        models.WorkoutRoutine.user_id == user_id,
+        models.WorkoutRoutine.id == routine_id
+    ).first()
 
 
-def create_workout_routine(db: Session, routine: schemas.WorkoutRoutineCreate) -> models.WorkoutRoutine:
+def create_workout_routine(db: Session, user_id: str, routine: schemas.WorkoutRoutineCreate) -> models.WorkoutRoutine:
     db_routine = models.WorkoutRoutine(
+        user_id=user_id,
         name=routine.name,
         description=routine.description,
     )
@@ -236,10 +252,11 @@ def create_workout_routine(db: Session, routine: schemas.WorkoutRoutineCreate) -
 
 def update_workout_routine(
     db: Session,
+    user_id: str,
     routine_id: int,
     routine_update: schemas.WorkoutRoutineUpdate
 ) -> models.WorkoutRoutine | None:
-    db_routine = get_workout_routine(db, routine_id)
+    db_routine = get_workout_routine(db, user_id, routine_id)
     if not db_routine:
         return None
 
@@ -252,8 +269,8 @@ def update_workout_routine(
     return db_routine
 
 
-def delete_workout_routine(db: Session, routine_id: int) -> bool:
-    db_routine = get_workout_routine(db, routine_id)
+def delete_workout_routine(db: Session, user_id: str, routine_id: int) -> bool:
+    db_routine = get_workout_routine(db, user_id, routine_id)
     if not db_routine:
         return False
 
@@ -264,16 +281,21 @@ def delete_workout_routine(db: Session, routine_id: int) -> bool:
 
 # Workout Day CRUD Operations
 
-def get_workout_day(db: Session, day_id: int) -> models.WorkoutDay | None:
-    return db.query(models.WorkoutDay).filter(models.WorkoutDay.id == day_id).first()
+def get_workout_day(db: Session, user_id: str, day_id: int) -> models.WorkoutDay | None:
+    """Get a workout day, verifying it belongs to the user"""
+    return db.query(models.WorkoutDay).join(models.WorkoutRoutine).filter(
+        models.WorkoutRoutine.user_id == user_id,
+        models.WorkoutDay.id == day_id
+    ).first()
 
 
 def create_workout_day(
     db: Session,
+    user_id: str,
     routine_id: int,
     day: schemas.WorkoutDayCreate
 ) -> models.WorkoutDay | None:
-    routine = get_workout_routine(db, routine_id)
+    routine = get_workout_routine(db, user_id, routine_id)
     if not routine:
         return None
 
@@ -306,10 +328,11 @@ def create_workout_day(
 
 def update_workout_day(
     db: Session,
+    user_id: str,
     day_id: int,
     day_update: schemas.WorkoutDayUpdate
 ) -> models.WorkoutDay | None:
-    db_day = get_workout_day(db, day_id)
+    db_day = get_workout_day(db, user_id, day_id)
     if not db_day:
         return None
 
@@ -322,8 +345,8 @@ def update_workout_day(
     return db_day
 
 
-def delete_workout_day(db: Session, day_id: int) -> bool:
-    db_day = get_workout_day(db, day_id)
+def delete_workout_day(db: Session, user_id: str, day_id: int) -> bool:
+    db_day = get_workout_day(db, user_id, day_id)
     if not db_day:
         return False
 
@@ -334,16 +357,21 @@ def delete_workout_day(db: Session, day_id: int) -> bool:
 
 # Exercise CRUD Operations
 
-def get_exercise(db: Session, exercise_id: int) -> models.Exercise | None:
-    return db.query(models.Exercise).filter(models.Exercise.id == exercise_id).first()
+def get_exercise(db: Session, user_id: str, exercise_id: int) -> models.Exercise | None:
+    """Get an exercise, verifying it belongs to the user"""
+    return db.query(models.Exercise).join(models.WorkoutDay).join(models.WorkoutRoutine).filter(
+        models.WorkoutRoutine.user_id == user_id,
+        models.Exercise.id == exercise_id
+    ).first()
 
 
 def create_exercise(
     db: Session,
+    user_id: str,
     day_id: int,
     exercise: schemas.ExerciseCreate
 ) -> models.Exercise | None:
-    day = get_workout_day(db, day_id)
+    day = get_workout_day(db, user_id, day_id)
     if not day:
         return None
 
@@ -365,10 +393,11 @@ def create_exercise(
 
 def update_exercise(
     db: Session,
+    user_id: str,
     exercise_id: int,
     exercise_update: schemas.ExerciseUpdate
 ) -> models.Exercise | None:
-    db_exercise = get_exercise(db, exercise_id)
+    db_exercise = get_exercise(db, user_id, exercise_id)
     if not db_exercise:
         return None
 
@@ -381,8 +410,8 @@ def update_exercise(
     return db_exercise
 
 
-def delete_exercise(db: Session, exercise_id: int) -> bool:
-    db_exercise = get_exercise(db, exercise_id)
+def delete_exercise(db: Session, user_id: str, exercise_id: int) -> bool:
+    db_exercise = get_exercise(db, user_id, exercise_id)
     if not db_exercise:
         return False
 
@@ -391,12 +420,13 @@ def delete_exercise(db: Session, exercise_id: int) -> bool:
     return True
 
 
-def get_todays_workout(db: Session) -> models.WorkoutDay | None:
+def get_todays_workout(db: Session, user_id: str) -> models.WorkoutDay | None:
     """Get the workout day scheduled for today based on day_of_week"""
     today_dow = date.today().weekday()  # Monday=0, Sunday=6
 
-    # Get the active routine
+    # Get the active routine for this user
     routine = db.query(models.WorkoutRoutine).filter(
+        models.WorkoutRoutine.user_id == user_id,
         models.WorkoutRoutine.is_active == True
     ).first()
 
