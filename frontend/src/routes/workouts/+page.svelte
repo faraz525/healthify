@@ -124,9 +124,10 @@
     const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
     const numericWeight = match ? parseFloat(match[1]) : 0;
     const newWeight = Math.max(0, numericWeight + delta);
-    // Preserve the unit if it exists, otherwise default to 'lbs'
-    const unit = currentWeight.match(/\s*(\w+)$/)?.[1] || 'lbs';
-    const newWeightStr = newWeight > 0 ? `${newWeight} ${unit}` : null;
+    // Preserve the unit if it exists (must be letters only, not digits)
+    const unitMatch = currentWeight.match(/\s+([a-zA-Z]+)$/);
+    const unit = unitMatch ? unitMatch[1] : '';
+    const newWeightStr = newWeight > 0 ? (unit ? `${newWeight} ${unit}` : `${newWeight}`) : null;
     if (exercise.id) {
       handleUpdateExercise(exercise.id, 'target_weight', newWeightStr);
     }
@@ -207,7 +208,7 @@
             </div>
 
             <div class="exercises-list">
-              {#each todaysWorkout.exercises.sort((a, b) => a.sort_order - b.sort_order) as exercise}
+              {#each [...todaysWorkout.exercises].sort((a, b) => a.sort_order - b.sort_order) as exercise}
                 <div class="exercise-item">
                   <div class="exercise-main">
                     <span class="exercise-name">{exercise.name}</span>
@@ -294,7 +295,7 @@
               {/if}
 
               <div class="days-grid">
-                {#each selectedRoutine.days.sort((a, b) => a.sort_order - b.sort_order) as day}
+                {#each [...selectedRoutine.days].sort((a, b) => a.sort_order - b.sort_order) as day}
                   <div class="day-card">
                     <div class="day-header">
                       <div class="day-info">
@@ -326,7 +327,7 @@
                     </div>
 
                     <div class="day-exercises">
-                      {#each day.exercises.sort((a, b) => a.sort_order - b.sort_order) as exercise}
+                      {#each [...day.exercises].sort((a, b) => a.sort_order - b.sort_order) as exercise}
                         <div class="exercise-edit-item">
                           <div class="exercise-edit-row">
                             <input
