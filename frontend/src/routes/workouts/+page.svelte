@@ -88,7 +88,7 @@
 
     try {
       await api.createWorkoutDay(selectedRoutine.id, newDay);
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to add day:', e);
     }
@@ -107,7 +107,7 @@
 
     try {
       await api.createExercise(dayId, newExercise);
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error('Failed to add exercise:', e);
     }
