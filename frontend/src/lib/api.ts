@@ -99,6 +99,78 @@ export interface WorkoutRoutine {
   updated_at?: string | null;
 }
 
+// Workout Session types
+export interface ExerciseLog {
+  id: number;
+  session_id: number;
+  exercise_id: number | null;
+  exercise_name: string;
+  sets_completed: number;
+  reps_achieved: string | null;
+  weight_used: string | null;
+  is_pr: boolean;
+  notes: string | null;
+  completed_at: string;
+}
+
+export interface ExerciseLogCreate {
+  exercise_id?: number | null;
+  exercise_name: string;
+  sets_completed: number;
+  reps_achieved?: string | null;
+  weight_used?: string | null;
+  notes?: string | null;
+}
+
+export interface WorkoutSession {
+  id: number;
+  workout_day_id: number | null;
+  date: string;
+  notes: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  exercise_logs: ExerciseLog[];
+  workout_day_name: string | null;
+}
+
+export interface WorkoutSessionSummary {
+  id: number;
+  workout_day_id: number | null;
+  date: string;
+  notes: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  workout_day_name: string | null;
+  exercises_completed: number;
+}
+
+export interface PersonalRecord {
+  id: number;
+  exercise_name: string;
+  record_type: 'weight' | 'reps' | 'volume';
+  value: string;
+  achieved_at: string;
+  exercise_log_id: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ExerciseProgressionPoint {
+  date: string;
+  weight: string | null;
+  sets: number;
+  reps: string | null;
+  is_pr: boolean;
+}
+
+export interface ExerciseProgression {
+  exercise_name: string;
+  history: ExerciseProgressionPoint[];
+  current_pr: PersonalRecord | null;
+}
+
 // Flag to prevent multiple refresh attempts
 let isRefreshing = false;
 
@@ -315,4 +387,76 @@ export const api = {
 
   deleteExercise: (exerciseId: number) =>
     fetchApi<void>(`/workouts/exercises/${exerciseId}`, { method: 'DELETE' }),
+
+  // Workout Sessions
+  getSessions: (params?: { start_date?: string; end_date?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.start_date) query.set('start_date', params.start_date);
+    if (params?.end_date) query.set('end_date', params.end_date);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    const queryStr = query.toString();
+    return fetchApi<WorkoutSessionSummary[]>(`/sessions${queryStr ? `?${queryStr}` : ''}`);
+  },
+
+  getSession: (sessionId: number) =>
+    fetchApi<WorkoutSession>(`/sessions/${sessionId}`),
+
+  getActiveSession: () =>
+    fetchApi<WorkoutSession | null>('/sessions/active'),
+
+  createSession: (session: { workout_day_id?: number | null; date: string; notes?: string }) =>
+    fetchApi<WorkoutSession>('/sessions', {
+      method: 'POST',
+      body: JSON.stringify(session),
+    }),
+
+  updateSession: (sessionId: number, update: { notes?: string }) =>
+    fetchApi<WorkoutSession>(`/sessions/${sessionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    }),
+
+  completeSession: (sessionId: number, notes?: string) =>
+    fetchApi<WorkoutSession>(`/sessions/${sessionId}/complete${notes ? `?notes=${encodeURIComponent(notes)}` : ''}`, {
+      method: 'POST',
+    }),
+
+  deleteSession: (sessionId: number) =>
+    fetchApi<void>(`/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  // Exercise Logging
+  logExercise: (sessionId: number, log: ExerciseLogCreate) =>
+    fetchApi<ExerciseLog>(`/sessions/${sessionId}/log`, {
+      method: 'POST',
+      body: JSON.stringify(log),
+    }),
+
+  updateExerciseLog: (sessionId: number, logId: number, update: Partial<ExerciseLogCreate>) =>
+    fetchApi<ExerciseLog>(`/sessions/${sessionId}/log/${logId}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    }),
+
+  deleteExerciseLog: (sessionId: number, logId: number) =>
+    fetchApi<void>(`/sessions/${sessionId}/log/${logId}`, { method: 'DELETE' }),
+
+  // Personal Records
+  getPersonalRecords: () =>
+    fetchApi<PersonalRecord[]>('/prs'),
+
+  createPersonalRecord: (pr: { exercise_name: string; record_type: string; value: string; achieved_at: string; notes?: string }) =>
+    fetchApi<PersonalRecord>('/prs', {
+      method: 'POST',
+      body: JSON.stringify(pr),
+    }),
+
+  deletePersonalRecord: (prId: number) =>
+    fetchApi<void>(`/prs/${prId}`, { method: 'DELETE' }),
+
+  // Exercise Progression
+  getLoggedExercises: () =>
+    fetchApi<string[]>('/exercises/logged'),
+
+  getExerciseHistory: (exerciseName: string, limit = 50) =>
+    fetchApi<ExerciseProgression>(`/exercises/${encodeURIComponent(exerciseName)}/history?limit=${limit}`),
 };

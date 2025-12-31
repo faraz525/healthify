@@ -20,6 +20,8 @@ class User(Base):
     daily_entries = relationship("DailyEntry", back_populates="user", cascade="all, delete-orphan")
     workout_routines = relationship("WorkoutRoutine", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    workout_sessions = relationship("WorkoutSession", back_populates="user", cascade="all, delete-orphan")
+    personal_records = relationship("PersonalRecord", back_populates="user", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -140,3 +142,59 @@ class Exercise(Base):
     sort_order = Column(Integer, default=0)
 
     workout_day = relationship("WorkoutDay", back_populates="exercises")
+    exercise_logs = relationship("ExerciseLog", back_populates="exercise")
+
+
+class WorkoutSession(Base):
+    """A completed workout session - tracks actual workout performance"""
+    __tablename__ = "workout_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    workout_day_id = Column(Integer, ForeignKey("workout_days.id"), nullable=True)  # Links to routine day
+    date = Column(Date, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="workout_sessions")
+    workout_day = relationship("WorkoutDay")
+    exercise_logs = relationship("ExerciseLog", back_populates="session", cascade="all, delete-orphan")
+
+
+class ExerciseLog(Base):
+    """Log of each exercise performed in a session"""
+    __tablename__ = "exercise_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("workout_sessions.id"), nullable=False)
+    exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=True)  # Links to planned exercise
+    exercise_name = Column(String(100), nullable=False)  # Denormalized for history
+    sets_completed = Column(Integer, nullable=False)
+    reps_achieved = Column(String(50), nullable=True)  # e.g., "10,10,8" or just "10"
+    weight_used = Column(String(50), nullable=True)  # e.g., "135 lbs"
+    is_pr = Column(Boolean, default=False)  # Flag if this was a new PR
+    notes = Column(Text, nullable=True)
+    completed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("WorkoutSession", back_populates="exercise_logs")
+    exercise = relationship("Exercise", back_populates="exercise_logs")
+
+
+class PersonalRecord(Base):
+    """Personal records / strength milestones"""
+    __tablename__ = "personal_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    exercise_name = Column(String(100), nullable=False, index=True)  # Normalized exercise name
+    record_type = Column(String(20), nullable=False)  # "weight", "reps", "volume"
+    value = Column(String(50), nullable=False)  # The PR value (stored as string to preserve unit)
+    achieved_at = Column(Date, nullable=False)
+    exercise_log_id = Column(Integer, ForeignKey("exercise_logs.id"), nullable=True)  # Link to when achieved
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="personal_records")
+    exercise_log = relationship("ExerciseLog")

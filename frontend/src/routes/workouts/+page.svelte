@@ -1,20 +1,39 @@
 <script lang="ts">
-  import { api, type WorkoutRoutine, type WorkoutDay, type Exercise } from '$lib/api';
+  import { api, type WorkoutRoutine, type WorkoutDay, type Exercise, type WorkoutSession, type ExerciseLog } from '$lib/api';
   import { onMount } from 'svelte';
+  import { session, loggedExerciseIds, personalRecords, prsByExercise } from '$lib/stores/session';
 
   let routines = $state<WorkoutRoutine[]>([]);
   let selectedRoutine = $state<WorkoutRoutine | null>(null);
   let todaysWorkout = $state<WorkoutDay | null>(null);
   let loading = $state(true);
-  let activeTab = $state<'today' | 'routines'>('today');
+  let activeTab = $state<'today' | 'routines' | 'progress'>('today');
   let showCreateModal = $state(false);
   let showEditModal = $state(false);
   let editingDay = $state<WorkoutDay | null>(null);
 
+  // Session state
+  let activeSession = $state<WorkoutSession | null>(null);
+  let sessionLoading = $state(false);
+  let lastPR = $state<{ exerciseName: string; weight: string } | null>(null);
+  let showPRToast = $state(false);
+
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // Subscribe to session store
+  $effect(() => {
+    const unsubscribe = session.subscribe(s => {
+      activeSession = s;
+    });
+    return unsubscribe;
+  });
 
   onMount(async () => {
     await loadData();
+    // Load active session if any
+    await session.loadActive();
+    // Load PRs
+    await personalRecords.load();
   });
 
   async function loadData(showLoading = true) {
@@ -168,6 +187,110 @@
     editingDay = { ...day };
     showEditModal = true;
   }
+
+  // Workout Session Functions
+  async function startWorkout() {
+    if (!todaysWorkout) return;
+    sessionLoading = true;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await session.start(todaysWorkout.id ?? null, today);
+    } catch (e) {
+      console.error('Failed to start workout:', e);
+    } finally {
+      sessionLoading = false;
+    }
+  }
+
+  async function completeExercise(exercise: Exercise) {
+    if (!activeSession || !exercise.id) return;
+
+    // Check if already logged
+    const alreadyLogged = activeSession.exercise_logs.some(l => l.exercise_id === exercise.id);
+    if (alreadyLogged) return;
+
+    sessionLoading = true;
+    try {
+      const log = await session.logExercise({
+        exercise_id: exercise.id,
+        exercise_name: exercise.name,
+        sets_completed: exercise.target_sets ?? 3,
+        reps_achieved: exercise.target_reps ?? null,
+        weight_used: exercise.target_weight ?? null,
+      });
+
+      // Check for PR and show toast
+      if (log.is_pr && exercise.target_weight) {
+        lastPR = { exerciseName: exercise.name, weight: exercise.target_weight };
+        showPRToast = true;
+        // Reload PRs
+        await personalRecords.load();
+        // Hide toast after 3 seconds
+        setTimeout(() => {
+          showPRToast = false;
+        }, 3000);
+      }
+    } catch (e) {
+      console.error('Failed to log exercise:', e);
+    } finally {
+      sessionLoading = false;
+    }
+  }
+
+  async function undoExercise(exercise: Exercise) {
+    if (!activeSession || !exercise.id) return;
+
+    const log = activeSession.exercise_logs.find(l => l.exercise_id === exercise.id);
+    if (!log) return;
+
+    sessionLoading = true;
+    try {
+      await session.undoExercise(log.id);
+    } catch (e) {
+      console.error('Failed to undo exercise:', e);
+    } finally {
+      sessionLoading = false;
+    }
+  }
+
+  async function completeWorkout() {
+    sessionLoading = true;
+    try {
+      await session.complete();
+    } catch (e) {
+      console.error('Failed to complete workout:', e);
+    } finally {
+      sessionLoading = false;
+    }
+  }
+
+  async function cancelWorkout() {
+    sessionLoading = true;
+    try {
+      await session.cancel();
+    } catch (e) {
+      console.error('Failed to cancel workout:', e);
+    } finally {
+      sessionLoading = false;
+    }
+  }
+
+  function isExerciseLogged(exerciseId: number): boolean {
+    if (!activeSession) return false;
+    return activeSession.exercise_logs.some(l => l.exercise_id === exerciseId);
+  }
+
+  function getExerciseLog(exerciseId: number): ExerciseLog | undefined {
+    if (!activeSession) return undefined;
+    return activeSession.exercise_logs.find(l => l.exercise_id === exerciseId);
+  }
+
+  function getCompletedCount(): number {
+    if (!activeSession || !todaysWorkout) return 0;
+    return activeSession.exercise_logs.filter(l =>
+      todaysWorkout!.exercises.some(e => e.id === l.exercise_id)
+    ).length;
+  }
 </script>
 
 <div class="container">
@@ -189,6 +312,9 @@
         onclick={() => activeTab = 'today'}
       >
         Today's Workout
+        {#if activeSession}
+          <span class="active-badge">Active</span>
+        {/if}
       </button>
       <button
         class="tab"
@@ -197,25 +323,81 @@
       >
         My Routines
       </button>
+      <button
+        class="tab"
+        class:active={activeTab === 'progress'}
+        onclick={() => activeTab = 'progress'}
+      >
+        Progress
+      </button>
     </div>
 
     {#if activeTab === 'today'}
       <div class="today-section">
         {#if todaysWorkout}
-          <div class="workout-card today-workout">
+          <div class="workout-card today-workout" class:active-workout={activeSession}>
             <div class="workout-header">
               <div class="workout-title">
                 <span class="day-badge">{getDayName(todaysWorkout.day_of_week)}</span>
                 <h2>{todaysWorkout.name}</h2>
               </div>
-              <span class="exercise-count">{todaysWorkout.exercises.length} exercises</span>
+              {#if activeSession}
+                <div class="session-progress">
+                  <span class="progress-text">{getCompletedCount()}/{todaysWorkout.exercises.length}</span>
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      style="width: {(getCompletedCount() / todaysWorkout.exercises.length) * 100}%"
+                    ></div>
+                  </div>
+                </div>
+              {:else}
+                <span class="exercise-count">{todaysWorkout.exercises.length} exercises</span>
+              {/if}
             </div>
+
+            {#if !activeSession}
+              <div class="start-section">
+                <button
+                  class="btn btn-primary btn-large start-workout-btn"
+                  onclick={startWorkout}
+                  disabled={sessionLoading}
+                >
+                  {#if sessionLoading}
+                    Starting...
+                  {:else}
+                    Start Workout
+                  {/if}
+                </button>
+              </div>
+            {/if}
 
             <div class="exercises-list">
               {#each [...todaysWorkout.exercises].sort((a, b) => a.sort_order - b.sort_order) as exercise}
-                <div class="exercise-item">
+                {@const isLogged = exercise.id ? isExerciseLogged(exercise.id) : false}
+                {@const exerciseLog = exercise.id ? getExerciseLog(exercise.id) : undefined}
+                <div
+                  class="exercise-item"
+                  class:completed={isLogged}
+                  class:clickable={activeSession && !isLogged}
+                  onclick={() => activeSession && !isLogged && exercise.id && completeExercise(exercise)}
+                >
                   <div class="exercise-main">
-                    <span class="exercise-name">{exercise.name}</span>
+                    <div class="exercise-left">
+                      {#if activeSession}
+                        <div class="checkbox" class:checked={isLogged}>
+                          {#if isLogged}
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          {/if}
+                        </div>
+                      {/if}
+                      <span class="exercise-name" class:strikethrough={isLogged}>{exercise.name}</span>
+                      {#if exerciseLog?.is_pr}
+                        <span class="pr-badge">PR!</span>
+                      {/if}
+                    </div>
                     <div class="exercise-details">
                       {#if exercise.target_sets}
                         <span class="detail-badge sets">{exercise.target_sets} sets</span>
@@ -228,7 +410,7 @@
                       {/if}
                     </div>
                   </div>
-                  {#if exercise.rest_seconds || exercise.notes}
+                  {#if (exercise.rest_seconds || exercise.notes) && !isLogged}
                     <div class="exercise-meta">
                       {#if exercise.rest_seconds}
                         <span class="rest-time">{formatRestTime(exercise.rest_seconds)}</span>
@@ -238,9 +420,44 @@
                       {/if}
                     </div>
                   {/if}
+                  {#if isLogged && activeSession}
+                    <button
+                      class="undo-btn"
+                      onclick={(e) => { e.stopPropagation(); undoExercise(exercise); }}
+                      title="Undo"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                      </svg>
+                    </button>
+                  {/if}
                 </div>
               {/each}
             </div>
+
+            {#if activeSession}
+              <div class="session-actions">
+                <button
+                  class="btn btn-secondary"
+                  onclick={cancelWorkout}
+                  disabled={sessionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  class="btn btn-primary btn-large"
+                  onclick={completeWorkout}
+                  disabled={sessionLoading || getCompletedCount() === 0}
+                >
+                  {#if sessionLoading}
+                    Saving...
+                  {:else}
+                    Complete Workout ({getCompletedCount()}/{todaysWorkout.exercises.length})
+                  {/if}
+                </button>
+              </div>
+            {/if}
           </div>
         {:else}
           <div class="empty-state">
@@ -409,9 +626,36 @@
           {/if}
         {/if}
       </div>
+    {:else if activeTab === 'progress'}
+      <div class="progress-section">
+        <div class="progress-placeholder">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3v18h18"/>
+              <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+            </svg>
+          </div>
+          <h3>Track Your Progress</h3>
+          <p>Complete workouts to see your exercise progression and PRs here.</p>
+          <p class="progress-note">Charts and detailed history coming soon!</p>
+        </div>
+      </div>
     {/if}
   {/if}
 </div>
+
+<!-- PR Toast Notification -->
+{#if showPRToast && lastPR}
+  <div class="pr-toast">
+    <div class="pr-toast-content">
+      <span class="pr-icon">🏆</span>
+      <div class="pr-text">
+        <strong>New PR!</strong>
+        <span>{lastPR.exerciseName} @ {lastPR.weight}</span>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showCreateModal}
   <div class="modal-overlay" onclick={() => showCreateModal = false}>
@@ -1032,6 +1276,256 @@
 
     .weight-btn {
       width: 40px;
+    }
+  }
+
+  /* Active Workout Styles */
+  .active-badge {
+    margin-left: var(--space-xs);
+    padding: 2px 6px;
+    background: var(--color-success);
+    color: white;
+    font-size: 0.65rem;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .active-workout {
+    border: 2px solid var(--color-primary);
+    background: linear-gradient(135deg, var(--color-bg-card) 0%, rgba(var(--color-primary-rgb), 0.05) 100%);
+  }
+
+  .session-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-xs);
+  }
+
+  .progress-text {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .progress-bar {
+    width: 100px;
+    height: 8px;
+    background: var(--color-border);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--color-success);
+    border-radius: var(--radius-full);
+    transition: width 0.3s ease;
+  }
+
+  .start-section {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-lg) 0;
+    margin-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .start-workout-btn {
+    padding: var(--space-md) var(--space-2xl);
+    font-size: 1.125rem;
+  }
+
+  .btn-large {
+    padding: var(--space-md) var(--space-xl);
+    font-size: 1rem;
+  }
+
+  .exercise-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .checkbox {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .checkbox.checked {
+    background: var(--color-success);
+    border-color: var(--color-success);
+    color: white;
+  }
+
+  .exercise-item.clickable {
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .exercise-item.clickable:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-primary);
+  }
+
+  .exercise-item.completed {
+    background: rgba(var(--color-success-rgb, 34, 197, 94), 0.1);
+    border-color: var(--color-success);
+    position: relative;
+  }
+
+  .strikethrough {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  .pr-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #78350f;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: var(--radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  .undo-btn {
+    position: absolute;
+    top: var(--space-sm);
+    right: var(--space-sm);
+    padding: var(--space-xs);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    opacity: 0;
+    transition: all var(--transition-fast);
+  }
+
+  .exercise-item.completed:hover .undo-btn {
+    opacity: 1;
+  }
+
+  .undo-btn:hover {
+    background: var(--color-bg-card);
+    color: var(--color-text);
+  }
+
+  .session-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-md);
+    margin-top: var(--space-xl);
+    padding-top: var(--space-lg);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  /* PR Toast */
+  .pr-toast {
+    position: fixed;
+    top: var(--space-xl);
+    right: var(--space-xl);
+    z-index: 1000;
+    animation: slideIn 0.3s ease;
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .pr-toast-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid #f59e0b;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .pr-icon {
+    font-size: 1.5rem;
+  }
+
+  .pr-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pr-text strong {
+    color: #92400e;
+    font-size: 0.875rem;
+  }
+
+  .pr-text span {
+    color: #78350f;
+    font-size: 0.8rem;
+  }
+
+  /* Progress Section */
+  .progress-section {
+    padding: var(--space-xl);
+  }
+
+  .progress-placeholder {
+    text-align: center;
+    padding: var(--space-2xl);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-xl);
+    border: 2px dashed var(--color-border);
+  }
+
+  .progress-note {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    margin-top: var(--space-md);
+  }
+
+  /* Mobile adjustments for session UI */
+  @media (max-width: 600px) {
+    .exercise-left {
+      flex-wrap: wrap;
+    }
+
+    .session-actions {
+      flex-direction: column;
+    }
+
+    .session-actions .btn {
+      width: 100%;
+    }
+
+    .pr-toast {
+      top: auto;
+      bottom: var(--space-xl);
+      left: var(--space-md);
+      right: var(--space-md);
     }
   }
 </style>

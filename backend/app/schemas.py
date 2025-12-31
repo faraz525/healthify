@@ -201,3 +201,112 @@ class RefreshRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+# Workout Session Schemas
+class ExerciseLogBase(BaseModel):
+    exercise_id: Optional[int] = None  # Links to planned exercise
+    exercise_name: str
+    sets_completed: int
+    reps_achieved: Optional[str] = None  # e.g., "10,10,8" or "10"
+    weight_used: Optional[str] = None  # e.g., "135 lbs"
+    notes: Optional[str] = None
+
+
+class ExerciseLogCreate(ExerciseLogBase):
+    pass
+
+
+class ExerciseLogUpdate(BaseModel):
+    sets_completed: Optional[int] = None
+    reps_achieved: Optional[str] = None
+    weight_used: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ExerciseLog(ExerciseLogBase):
+    id: int
+    session_id: int
+    is_pr: bool = False
+    completed_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkoutSessionBase(BaseModel):
+    workout_day_id: Optional[int] = None
+    date: date
+    notes: Optional[str] = None
+
+
+class WorkoutSessionCreate(WorkoutSessionBase):
+    pass
+
+
+class WorkoutSessionUpdate(BaseModel):
+    notes: Optional[str] = None
+    completed_at: Optional[datetime] = None
+
+
+class WorkoutSessionSummary(WorkoutSessionBase):
+    """Summary without exercise logs for list views"""
+    id: int
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    workout_day_name: Optional[str] = None
+    exercises_completed: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class WorkoutSession(WorkoutSessionBase):
+    """Full session with exercise logs"""
+    id: int
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+    exercise_logs: list[ExerciseLog] = []
+    workout_day_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Personal Record Schemas
+class PersonalRecordBase(BaseModel):
+    exercise_name: str
+    record_type: str  # "weight", "reps", "volume"
+    value: str
+    achieved_at: date
+    notes: Optional[str] = None
+
+
+class PersonalRecordCreate(PersonalRecordBase):
+    exercise_log_id: Optional[int] = None
+
+
+class PersonalRecord(PersonalRecordBase):
+    id: int
+    exercise_log_id: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Progression Data for Charts
+class ExerciseProgressionPoint(BaseModel):
+    date: date
+    weight: Optional[str] = None
+    sets: int
+    reps: Optional[str] = None
+    is_pr: bool = False
+
+
+class ExerciseProgression(BaseModel):
+    exercise_name: str
+    history: list[ExerciseProgressionPoint]
+    current_pr: Optional[PersonalRecord] = None
