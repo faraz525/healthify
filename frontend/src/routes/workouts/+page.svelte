@@ -1,172 +1,153 @@
 <script lang="ts">
-  import { api, type WorkoutRoutine, type WorkoutDay, type Exercise } from '$lib/api';
-  import { onMount } from 'svelte';
+  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { untrack } from 'svelte';
 
-  let routines = $state<WorkoutRoutine[]>([]);
+  interface Exercise {
+    id?: number;
+    name: string;
+    targetSets?: number | null;
+    targetReps?: string | null;
+    targetWeight?: string | null;
+    restSeconds?: number | null;
+    notes?: string | null;
+    sortOrder: number;
+  }
+
+  interface WorkoutDay {
+    id?: number;
+    name: string;
+    dayOfWeek?: number | null;
+    sortOrder: number;
+    exercises: Exercise[];
+  }
+
+  interface WorkoutRoutine {
+    id?: number;
+    name: string;
+    description?: string | null;
+    isActive?: boolean | null;
+    days: WorkoutDay[];
+  }
+
+  let { data } = $props<{ data: { routines: WorkoutRoutine[]; todaysWorkout: WorkoutDay | null } }>();
+
+  let routines = $derived(data.routines);
+  let todaysWorkout = $derived(data.todaysWorkout);
   let selectedRoutine = $state<WorkoutRoutine | null>(null);
-  let todaysWorkout = $state<WorkoutDay | null>(null);
-  let loading = $state(true);
   let activeTab = $state<'today' | 'routines'>('today');
   let showCreateModal = $state(false);
-  let showEditModal = $state(false);
-  let editingDay = $state<WorkoutDay | null>(null);
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-  onMount(async () => {
-    await loadData();
+  // Keep selectedRoutine in sync with the routines data
+  $effect(() => {
+    if (routines.length > 0) {
+      // Use untrack to read selectedRoutine without creating a dependency
+      const currentSelected = untrack(() => selectedRoutine);
+      if (currentSelected) {
+        // Find the updated version of the currently selected routine
+        const updated = routines.find((r: WorkoutRoutine) => r.id === currentSelected.id);
+        if (updated) {
+          selectedRoutine = updated;
+        } else {
+          // If the selected routine was deleted, select another one
+          selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
+        }
+      } else {
+        // No routine selected yet, pick one
+        selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
+      }
+    }
   });
 
-  async function loadData(showLoading = true) {
-    if (showLoading) loading = true;
-    try {
-      const [routinesData, todaysData] = await Promise.all([
-        api.getWorkoutRoutines(),
-        api.getTodaysWorkout()
-      ]);
-      routines = routinesData;
-      todaysWorkout = todaysData;
-      if (routines.length > 0) {
-        selectedRoutine = routines.find(r => r.is_active) || routines[0];
-      }
-    } catch (e) {
-      console.error('Failed to load workouts:', e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function refreshData() {
-    await loadData(false);
-  }
-
-  function getDayName(dayOfWeek: number | null): string {
-    if (dayOfWeek === null) return 'Flexible';
+  function getDayName(dayOfWeek: number | null | undefined): string {
+    if (dayOfWeek === null || dayOfWeek === undefined) return 'Flexible';
     return dayNames[dayOfWeek];
   }
 
-  function getTodayDayOfWeek(): number {
-    const day = new Date().getDay();
-    return day === 0 ? 6 : day - 1; // Convert Sunday=0 to Monday=0 format
-  }
-
-  function formatRestTime(seconds: number | null): string {
+  function formatRestTime(seconds: number | null | undefined): string {
     if (!seconds) return '';
     if (seconds < 60) return `${seconds}s rest`;
     return `${Math.floor(seconds / 60)}m rest`;
   }
 
-  async function handleCreateRoutine(event: SubmitEvent) {
-    event.preventDefault();
-    const form = event.target as HTMLFormElement;
-    const formData = new FormData(form);
-
-    const routine = {
-      name: formData.get('name') as string,
-      description: formData.get('description') as string || undefined,
-      days: []
-    };
-
-    try {
-      await api.createWorkoutRoutine(routine);
-      showCreateModal = false;
-      await loadData();
-    } catch (e) {
-      console.error('Failed to create routine:', e);
-    }
-  }
-
   async function handleAddDay() {
     if (!selectedRoutine?.id) return;
 
-    const newDay = {
+    const formData = new FormData();
+    formData.set('routineId', selectedRoutine.id.toString());
+    formData.set('data', JSON.stringify({
       name: 'New Day',
-      day_of_week: null,
-      sort_order: selectedRoutine.days.length,
-      exercises: []
-    };
+      dayOfWeek: null,
+      sortOrder: selectedRoutine.days.length
+    }));
 
-    try {
-      await api.createWorkoutDay(selectedRoutine.id, newDay);
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to add day:', e);
-    }
+    await fetch('?/createDay', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   async function handleAddExercise(dayId: number) {
-    const newExercise = {
+    const formData = new FormData();
+    formData.set('dayId', dayId.toString());
+    formData.set('data', JSON.stringify({
       name: 'New Exercise',
-      target_sets: 3,
-      target_reps: '8-12',
-      target_weight: null,
-      rest_seconds: 90,
-      notes: null,
-      sort_order: 0
-    };
+      targetSets: 3,
+      targetReps: '8-12',
+      targetWeight: null,
+      restSeconds: 90,
+      sortOrder: 0
+    }));
 
-    try {
-      await api.createExercise(dayId, newExercise);
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to add exercise:', e);
-    }
+    await fetch('?/createExercise', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   async function handleUpdateExercise(exerciseId: number, field: string, value: string | number | null) {
-    try {
-      await api.updateExercise(exerciseId, { [field]: value });
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to update exercise:', e);
-    }
+    const formData = new FormData();
+    formData.set('exerciseId', exerciseId.toString());
+    formData.set('data', JSON.stringify({ [field]: value }));
+
+    await fetch('?/updateExercise', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   function adjustWeight(exercise: Exercise, delta: number) {
-    const currentWeight = exercise.target_weight || '0';
-    // Extract numeric value from weight string (e.g., "135 lbs" -> 135)
+    const currentWeight = exercise.targetWeight || '0';
     const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
     const numericWeight = match ? parseFloat(match[1]) : 0;
     const newWeight = Math.max(0, numericWeight + delta);
-    // Preserve the unit if it exists (must be letters only, not digits)
     const unitMatch = currentWeight.match(/\s+([a-zA-Z]+)$/);
     const unit = unitMatch ? unitMatch[1] : '';
     const newWeightStr = newWeight > 0 ? (unit ? `${newWeight} ${unit}` : `${newWeight}`) : null;
     if (exercise.id) {
-      handleUpdateExercise(exercise.id, 'target_weight', newWeightStr);
+      handleUpdateExercise(exercise.id, 'targetWeight', newWeightStr);
     }
   }
 
   async function handleDeleteExercise(exerciseId: number) {
-    try {
-      await api.deleteExercise(exerciseId);
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to delete exercise:', e);
-    }
+    const formData = new FormData();
+    formData.set('exerciseId', exerciseId.toString());
+
+    await fetch('?/deleteExercise', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   async function handleUpdateDay(dayId: number, field: string, value: string | number | null) {
-    try {
-      await api.updateWorkoutDay(dayId, { [field]: value });
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to update day:', e);
-    }
+    const formData = new FormData();
+    formData.set('dayId', dayId.toString());
+    formData.set('data', JSON.stringify({ [field]: value }));
+
+    await fetch('?/updateDay', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   async function handleDeleteDay(dayId: number) {
-    try {
-      await api.deleteWorkoutDay(dayId);
-      await refreshData();
-    } catch (e) {
-      console.error('Failed to delete day:', e);
-    }
-  }
+    const formData = new FormData();
+    formData.set('dayId', dayId.toString());
 
-  function openEditDay(day: WorkoutDay) {
-    editingDay = { ...day };
-    showEditModal = true;
+    await fetch('?/deleteDay', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 </script>
 
@@ -176,240 +157,233 @@
     <p class="subtitle">Your gym routines and exercises</p>
   </div>
 
-  {#if loading}
-    <div class="loading-state">
-      <div class="loading-spinner"></div>
-      <p>Loading workouts...</p>
+  <div class="tabs">
+    <button
+      class="tab"
+      class:active={activeTab === 'today'}
+      onclick={() => activeTab = 'today'}
+    >
+      Today's Workout
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === 'routines'}
+      onclick={() => activeTab = 'routines'}
+    >
+      My Routines
+    </button>
+  </div>
+
+  {#if activeTab === 'today'}
+    <div class="today-section">
+      {#if todaysWorkout}
+        <div class="workout-card today-workout">
+          <div class="workout-header">
+            <div class="workout-title">
+              <span class="day-badge">{getDayName(todaysWorkout.dayOfWeek)}</span>
+              <h2>{todaysWorkout.name}</h2>
+            </div>
+            <span class="exercise-count">{todaysWorkout.exercises.length} exercises</span>
+          </div>
+
+          <div class="exercises-list">
+            {#each [...todaysWorkout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+              <div class="exercise-item">
+                <div class="exercise-main">
+                  <span class="exercise-name">{exercise.name}</span>
+                  <div class="exercise-details">
+                    {#if exercise.targetSets}
+                      <span class="detail-badge sets">{exercise.targetSets} sets</span>
+                    {/if}
+                    {#if exercise.targetReps}
+                      <span class="detail-badge reps">{exercise.targetReps} reps</span>
+                    {/if}
+                    {#if exercise.targetWeight}
+                      <span class="detail-badge weight">{exercise.targetWeight}</span>
+                    {/if}
+                  </div>
+                </div>
+                {#if exercise.restSeconds || exercise.notes}
+                  <div class="exercise-meta">
+                    {#if exercise.restSeconds}
+                      <span class="rest-time">{formatRestTime(exercise.restSeconds)}</span>
+                    {/if}
+                    {#if exercise.notes}
+                      <span class="exercise-notes">{exercise.notes}</span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/>
+            </svg>
+          </div>
+          <h3>No workout scheduled for today</h3>
+          <p>Create a routine and assign workouts to days of the week to see your daily workout here.</p>
+          <button class="btn btn-primary" onclick={() => activeTab = 'routines'}>
+            View Routines
+          </button>
+        </div>
+      {/if}
     </div>
   {:else}
-    <div class="tabs">
-      <button
-        class="tab"
-        class:active={activeTab === 'today'}
-        onclick={() => activeTab = 'today'}
-      >
-        Today's Workout
-      </button>
-      <button
-        class="tab"
-        class:active={activeTab === 'routines'}
-        onclick={() => activeTab = 'routines'}
-      >
-        My Routines
-      </button>
-    </div>
+    <div class="routines-section">
+      {#if routines.length === 0}
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </div>
+          <h3>No workout routines yet</h3>
+          <p>Create your first workout routine to start tracking your gym sessions.</p>
+          <button class="btn btn-primary" onclick={() => showCreateModal = true}>
+            Create Routine
+          </button>
+        </div>
+      {:else}
+        <div class="routines-header">
+          <select
+            class="routine-select"
+            onchange={(e) => {
+              const id = parseInt((e.target as HTMLSelectElement).value);
+              selectedRoutine = routines.find((r: WorkoutRoutine) => r.id === id) || null;
+            }}
+          >
+            {#each routines as routine}
+              <option value={routine.id} selected={routine.id === selectedRoutine?.id}>
+                {routine.name} {routine.isActive ? '(Active)' : ''}
+              </option>
+            {/each}
+          </select>
+          <button class="btn btn-secondary" onclick={() => showCreateModal = true}>
+            + New Routine
+          </button>
+        </div>
 
-    {#if activeTab === 'today'}
-      <div class="today-section">
-        {#if todaysWorkout}
-          <div class="workout-card today-workout">
-            <div class="workout-header">
-              <div class="workout-title">
-                <span class="day-badge">{getDayName(todaysWorkout.day_of_week)}</span>
-                <h2>{todaysWorkout.name}</h2>
-              </div>
-              <span class="exercise-count">{todaysWorkout.exercises.length} exercises</span>
-            </div>
+        {#if selectedRoutine}
+          <div class="routine-content">
+            {#if selectedRoutine.description}
+              <p class="routine-description">{selectedRoutine.description}</p>
+            {/if}
 
-            <div class="exercises-list">
-              {#each [...todaysWorkout.exercises].sort((a, b) => a.sort_order - b.sort_order) as exercise}
-                <div class="exercise-item">
-                  <div class="exercise-main">
-                    <span class="exercise-name">{exercise.name}</span>
-                    <div class="exercise-details">
-                      {#if exercise.target_sets}
-                        <span class="detail-badge sets">{exercise.target_sets} sets</span>
-                      {/if}
-                      {#if exercise.target_reps}
-                        <span class="detail-badge reps">{exercise.target_reps} reps</span>
-                      {/if}
-                      {#if exercise.target_weight}
-                        <span class="detail-badge weight">{exercise.target_weight}</span>
-                      {/if}
+            <div class="days-grid">
+              {#each [...selectedRoutine.days].sort((a, b) => a.sortOrder - b.sortOrder) as day}
+                <div class="day-card">
+                  <div class="day-header">
+                    <div class="day-info">
+                      <select
+                        class="day-select"
+                        value={day.dayOfWeek ?? ''}
+                        onchange={(e) => {
+                          const val = (e.target as HTMLSelectElement).value;
+                          handleUpdateDay(day.id!, 'dayOfWeek', val === '' ? null : parseInt(val));
+                        }}
+                      >
+                        <option value="">Flexible</option>
+                        {#each dayNames as name, i}
+                          <option value={i}>{name}</option>
+                        {/each}
+                      </select>
+                      <input
+                        type="text"
+                        class="day-name-input"
+                        value={day.name}
+                        onblur={(e) => handleUpdateDay(day.id!, 'name', (e.target as HTMLInputElement).value)}
+                      />
                     </div>
+                    <button class="icon-btn delete" onclick={() => handleDeleteDay(day.id!)} title="Delete day">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                      </svg>
+                    </button>
                   </div>
-                  {#if exercise.rest_seconds || exercise.notes}
-                    <div class="exercise-meta">
-                      {#if exercise.rest_seconds}
-                        <span class="rest-time">{formatRestTime(exercise.rest_seconds)}</span>
-                      {/if}
-                      {#if exercise.notes}
-                        <span class="exercise-notes">{exercise.notes}</span>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          </div>
-        {:else}
-          <div class="empty-state">
-            <div class="empty-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/>
-              </svg>
-            </div>
-            <h3>No workout scheduled for today</h3>
-            <p>Create a routine and assign workouts to days of the week to see your daily workout here.</p>
-            <button class="btn btn-primary" onclick={() => activeTab = 'routines'}>
-              View Routines
-            </button>
-          </div>
-        {/if}
-      </div>
-    {:else}
-      <div class="routines-section">
-        {#if routines.length === 0}
-          <div class="empty-state">
-            <div class="empty-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M12 5v14M5 12h14"/>
-              </svg>
-            </div>
-            <h3>No workout routines yet</h3>
-            <p>Create your first workout routine to start tracking your gym sessions.</p>
-            <button class="btn btn-primary" onclick={() => showCreateModal = true}>
-              Create Routine
-            </button>
-          </div>
-        {:else}
-          <div class="routines-header">
-            <select
-              class="routine-select"
-              onchange={(e) => {
-                const id = parseInt((e.target as HTMLSelectElement).value);
-                selectedRoutine = routines.find(r => r.id === id) || null;
-              }}
-            >
-              {#each routines as routine}
-                <option value={routine.id} selected={routine.id === selectedRoutine?.id}>
-                  {routine.name} {routine.is_active ? '(Active)' : ''}
-                </option>
-              {/each}
-            </select>
-            <button class="btn btn-secondary" onclick={() => showCreateModal = true}>
-              + New Routine
-            </button>
-          </div>
 
-          {#if selectedRoutine}
-            <div class="routine-content">
-              {#if selectedRoutine.description}
-                <p class="routine-description">{selectedRoutine.description}</p>
-              {/if}
-
-              <div class="days-grid">
-                {#each [...selectedRoutine.days].sort((a, b) => a.sort_order - b.sort_order) as day}
-                  <div class="day-card">
-                    <div class="day-header">
-                      <div class="day-info">
-                        <select
-                          class="day-select"
-                          value={day.day_of_week ?? ''}
-                          onchange={(e) => {
-                            const val = (e.target as HTMLSelectElement).value;
-                            handleUpdateDay(day.id!, 'day_of_week', val === '' ? null : parseInt(val));
-                          }}
-                        >
-                          <option value="">Flexible</option>
-                          {#each dayNames as name, i}
-                            <option value={i}>{name}</option>
-                          {/each}
-                        </select>
-                        <input
-                          type="text"
-                          class="day-name-input"
-                          value={day.name}
-                          onblur={(e) => handleUpdateDay(day.id!, 'name', (e.target as HTMLInputElement).value)}
-                        />
-                      </div>
-                      <button class="icon-btn delete" onclick={() => handleDeleteDay(day.id!)} title="Delete day">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                        </svg>
-                      </button>
-                    </div>
-
-                    <div class="day-exercises">
-                      {#each [...day.exercises].sort((a, b) => a.sort_order - b.sort_order) as exercise}
-                        <div class="exercise-edit-item">
-                          <div class="exercise-edit-row">
+                  <div class="day-exercises">
+                    {#each [...day.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+                      <div class="exercise-edit-item">
+                        <div class="exercise-edit-row">
+                          <input
+                            type="text"
+                            class="exercise-name-input"
+                            value={exercise.name}
+                            onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
+                          />
+                          <button class="icon-btn delete small" onclick={() => handleDeleteExercise(exercise.id!)} title="Delete exercise">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        </div>
+                        <div class="exercise-edit-details">
+                          <div class="detail-input-group">
+                            <label>Sets</label>
+                            <input
+                              type="number"
+                              value={exercise.targetSets ?? ''}
+                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetSets', parseInt((e.target as HTMLInputElement).value) || null)}
+                            />
+                          </div>
+                          <div class="detail-input-group">
+                            <label>Reps</label>
                             <input
                               type="text"
-                              class="exercise-name-input"
-                              value={exercise.name}
-                              onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
+                              value={exercise.targetReps ?? ''}
+                              placeholder="8-12"
+                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
                             />
-                            <button class="icon-btn delete small" onclick={() => handleDeleteExercise(exercise.id!)} title="Delete exercise">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M18 6L6 18M6 6l12 12"/>
-                              </svg>
-                            </button>
                           </div>
-                          <div class="exercise-edit-details">
-                            <div class="detail-input-group">
-                              <label>Sets</label>
-                              <input
-                                type="number"
-                                value={exercise.target_sets ?? ''}
-                                onblur={(e) => handleUpdateExercise(exercise.id!, 'target_sets', parseInt((e.target as HTMLInputElement).value) || null)}
-                              />
-                            </div>
-                            <div class="detail-input-group">
-                              <label>Reps</label>
+                          <div class="detail-input-group weight-group">
+                            <label>Weight</label>
+                            <div class="weight-controls">
+                              <button
+                                type="button"
+                                class="weight-btn minus"
+                                onclick={() => adjustWeight(exercise, -5)}
+                                title="Decrease by 5"
+                              >-5</button>
                               <input
                                 type="text"
-                                value={exercise.target_reps ?? ''}
-                                placeholder="8-12"
-                                onblur={(e) => handleUpdateExercise(exercise.id!, 'target_reps', (e.target as HTMLInputElement).value || null)}
+                                class="weight-input"
+                                value={exercise.targetWeight ?? ''}
+                                placeholder="135 lbs"
+                                onblur={(e) => handleUpdateExercise(exercise.id!, 'targetWeight', (e.target as HTMLInputElement).value || null)}
                               />
-                            </div>
-                            <div class="detail-input-group weight-group">
-                              <label>🏋️ Weight</label>
-                              <div class="weight-controls">
-                                <button
-                                  type="button"
-                                  class="weight-btn minus"
-                                  onclick={() => adjustWeight(exercise, -5)}
-                                  title="Decrease by 5"
-                                >-5</button>
-                                <input
-                                  type="text"
-                                  class="weight-input"
-                                  value={exercise.target_weight ?? ''}
-                                  placeholder="135 lbs"
-                                  onblur={(e) => handleUpdateExercise(exercise.id!, 'target_weight', (e.target as HTMLInputElement).value || null)}
-                                />
-                                <button
-                                  type="button"
-                                  class="weight-btn plus"
-                                  onclick={() => adjustWeight(exercise, 5)}
-                                  title="Increase by 5"
-                                >+5</button>
-                              </div>
+                              <button
+                                type="button"
+                                class="weight-btn plus"
+                                onclick={() => adjustWeight(exercise, 5)}
+                                title="Increase by 5"
+                              >+5</button>
                             </div>
                           </div>
                         </div>
-                      {/each}
-                      <button class="add-exercise-btn" onclick={() => handleAddExercise(day.id!)}>
-                        + Add Exercise
-                      </button>
-                    </div>
+                      </div>
+                    {/each}
+                    <button class="add-exercise-btn" onclick={() => handleAddExercise(day.id!)}>
+                      + Add Exercise
+                    </button>
                   </div>
-                {/each}
+                </div>
+              {/each}
 
-                <button class="add-day-card" onclick={handleAddDay}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 5v14M5 12h14"/>
-                  </svg>
-                  <span>Add Day</span>
-                </button>
-              </div>
+              <button class="add-day-card" onclick={handleAddDay}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                <span>Add Day</span>
+              </button>
             </div>
-          {/if}
+          </div>
         {/if}
-      </div>
-    {/if}
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -417,7 +391,12 @@
   <div class="modal-overlay" onclick={() => showCreateModal = false}>
     <div class="modal" onclick={(e) => e.stopPropagation()}>
       <h2>Create Workout Routine</h2>
-      <form onsubmit={handleCreateRoutine}>
+      <form method="POST" action="?/createRoutine" use:enhance={() => {
+        return async ({ update }) => {
+          await update();
+          showCreateModal = false;
+        };
+      }}>
         <div class="form-group">
           <label for="name">Routine Name</label>
           <input type="text" id="name" name="name" required placeholder="e.g., Push Pull Legs" />
@@ -448,29 +427,6 @@
   .subtitle {
     font-size: 1.125rem;
     color: var(--color-text-muted);
-  }
-
-  .loading-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-md);
-    padding: var(--space-2xl);
-    color: var(--color-text-muted);
-  }
-
-  .loading-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--color-border);
-    border-top-color: var(--color-primary);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .tabs {
@@ -509,7 +465,6 @@
     background: var(--color-primary);
   }
 
-  /* Today's Workout Section */
   .today-workout {
     background: var(--color-bg-card);
     border-radius: var(--radius-xl);
@@ -622,17 +577,6 @@
     color: var(--color-text-muted);
   }
 
-  .rest-time {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-  }
-
-  .exercise-notes {
-    font-style: italic;
-  }
-
-  /* Empty State */
   .empty-state {
     text-align: center;
     padding: var(--space-2xl);
@@ -659,7 +603,6 @@
     margin-right: auto;
   }
 
-  /* Routines Section */
   .routines-header {
     display: flex;
     justify-content: space-between;
@@ -916,7 +859,6 @@
     background: rgba(var(--color-primary-rgb), 0.05);
   }
 
-  /* Modal */
   .modal-overlay {
     position: fixed;
     inset: 0;
@@ -975,7 +917,6 @@
     margin-top: var(--space-xl);
   }
 
-  /* Mobile Responsiveness */
   @media (max-width: 600px) {
     .page-header h1 {
       font-size: 2rem;
