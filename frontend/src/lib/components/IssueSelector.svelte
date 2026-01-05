@@ -1,5 +1,20 @@
 <script lang="ts">
-  import type { HealthIssue, IssueType } from '$lib/api';
+  // Define local types instead of importing from API
+  interface HealthIssue {
+    issueType: string;
+    severity: number | null;
+    notes: string | null;
+    timeOfDay: string | null;
+  }
+
+  interface IssueType {
+    id: number;
+    name: string;
+    displayName: string;
+    icon: string | null;
+    isActive: boolean | null;
+    sortOrder: number | null;
+  }
 
   interface Props {
     issues: HealthIssue[];
@@ -27,20 +42,20 @@
     return icon ? (iconMap[icon] || '•') : '•';
   }
 
-  function isSelected(issueType: string): boolean {
-    return issues.some(i => i.issue_type === issueType);
+  function isSelected(issueTypeName: string): boolean {
+    return issues.some(i => i.issueType === issueTypeName);
   }
 
   function toggleIssue(issueType: IssueType) {
-    const index = issues.findIndex(i => i.issue_type === issueType.name);
+    const index = issues.findIndex(i => i.issueType === issueType.name);
     if (index >= 0) {
       issues = issues.filter((_, i) => i !== index);
     } else {
       issues = [...issues, {
-        issue_type: issueType.name,
+        issueType: issueType.name,
         severity: null,
         notes: null,
-        time_of_day: null
+        timeOfDay: null
       }];
     }
   }
@@ -49,12 +64,12 @@
     if (!customIssue.trim()) return;
 
     const name = customIssue.toLowerCase().replace(/\s+/g, '_');
-    if (!issues.some(i => i.issue_type === name)) {
+    if (!issues.some(i => i.issueType === name)) {
       issues = [...issues, {
-        issue_type: name,
+        issueType: name,
         severity: null,
         notes: customIssue.trim(),
-        time_of_day: null
+        timeOfDay: null
       }];
     }
     customIssue = '';
@@ -85,7 +100,7 @@
         onclick={() => toggleIssue(type)}
       >
         <span class="issue-icon">{getIcon(type.icon)}</span>
-        <span class="issue-name">{type.display_name}</span>
+        <span class="issue-name">{type.displayName}</span>
       </button>
     {/each}
   </div>
@@ -94,7 +109,7 @@
     <div class="selected-issues">
       {#each issues as issue, index}
         <div class="issue-badge">
-          <span>{issue.notes || issue.issue_type.replace(/_/g, ' ')}</span>
+          <span>{issue.notes || issue.issueType.replace(/_/g, ' ')}</span>
           <button class="remove-btn" onclick={() => removeIssue(index)} aria-label="Remove">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>

@@ -6,6 +6,7 @@ export type EntryInput = {
   date: string;
   stressLevel?: number | null;
   workedOut?: boolean;
+  workoutType?: string | null;
   workoutNotes?: string | null;
   notes?: string | null;
   healthIssues?: Array<{
@@ -51,6 +52,7 @@ export function createEntry(data: EntryInput) {
     date: entryData.date,
     stressLevel: entryData.stressLevel,
     workedOut: entryData.workedOut ?? false,
+    workoutType: entryData.workoutType,
     workoutNotes: entryData.workoutNotes,
     notes: entryData.notes
   }).returning().all();

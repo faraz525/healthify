@@ -2,11 +2,20 @@
   import '../app.css';
   import { page } from '$app/stores';
   import { modalOpen } from '$lib/stores/ui';
+  import { issueTypes } from '$lib/stores/issueTypes';
+  import { entries } from '$lib/stores/entries';
   import Toast from '$lib/components/Toast.svelte';
   import EntryModal from '$lib/components/EntryModal.svelte';
+  import type { LayoutData } from './$types';
 
-  let { children } = $props();
+  let { children, data }: { children: any; data: LayoutData } = $props();
   let mobileMenuOpen = $state(false);
+
+  // Sync layout data to stores
+  $effect(() => {
+    issueTypes.set(data.issueTypes);
+    entries.set(data.entries);
+  });
 
   function toggleMenu() {
     mobileMenuOpen = !mobileMenuOpen;
