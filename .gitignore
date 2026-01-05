@@ -53,3 +53,8 @@ Thumbs.db
 # Logs
 logs/
 *.log
+
+# Claude Code local files
+.claude/agents/
+.claude/commands/
+thoughts/
