@@ -29,19 +29,65 @@
     days: WorkoutDay[];
   }
 
-  let { data } = $props<{ data: { routines: WorkoutRoutine[]; todaysWorkout: WorkoutDay | null } }>();
+  interface WorkoutSession {
+    id: number;
+    workoutDayId: number;
+    status: string;
+    startedAt: string;
+    completedAt?: string | null;
+    notes?: string | null;
+    workoutDay?: WorkoutDay;
+  }
+
+  interface ExerciseLog {
+    id: number;
+    setNumber: number;
+    weight: string | null;
+    reps: number | null;
+    isPR: boolean;
+  }
+
+  interface SessionPR {
+    exerciseId: number;
+    exerciseName: string;
+    weight: string | null;
+    reps: number | null;
+  }
+
+  interface PreviousBest {
+    weight: string;
+    reps: number;
+  }
+
+  let { data } = $props<{
+    data: {
+      routines: WorkoutRoutine[];
+      todaysWorkout: WorkoutDay | null;
+      activeSession: WorkoutSession | null;
+      sessionLogs: Record<number, ExerciseLog[]>;
+      sessionPRs: SessionPR[];
+      exercisePreviousBests: Record<number, PreviousBest | null>;
+    }
+  }>();
 
   let routines = $derived(data.routines);
   let todaysWorkout = $derived(data.todaysWorkout);
+  let activeSession = $derived(data.activeSession);
+  let sessionLogs = $derived(data.sessionLogs);
+  let sessionPRs = $derived(data.sessionPRs);
+  let exercisePreviousBests = $derived(data.exercisePreviousBests);
   let selectedRoutine = $state<WorkoutRoutine | null>(null);
   let activeTab = $state<'today' | 'routines'>('today');
   let showCreateModal = $state(false);
+  let showPRToast = $state(false);
+  let lastPR = $state<{ exerciseName: string; weight: string | null; reps: number | null } | null>(null);
+  let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   $effect(() => {
     if (routines.length > 0 && !selectedRoutine) {
-      selectedRoutine = routines.find(r => r.isActive) || routines[0];
+      selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
     }
   });
 
@@ -133,6 +179,114 @@
     await fetch('?/deleteDay', { method: 'POST', body: formData });
     await invalidateAll();
   }
+
+  // Session management functions
+  async function handleStartSession(workoutDayId: number) {
+    const formData = new FormData();
+    formData.set('workoutDayId', workoutDayId.toString());
+
+    await fetch('?/startSession', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  async function handleLogSet(exerciseId: number, exerciseName: string, setNumber: number, weight: string, reps: number) {
+    if (!activeSession) return;
+
+    const formData = new FormData();
+    formData.set('sessionId', activeSession.id.toString());
+    formData.set('exerciseId', exerciseId.toString());
+    formData.set('setNumber', setNumber.toString());
+    formData.set('weight', weight);
+    formData.set('reps', reps.toString());
+
+    const response = await fetch('?/logSet', { method: 'POST', body: formData });
+    const result = await response.json();
+
+    // Show PR toast if this was a new PR
+    if (result.data?.isPR) {
+      showPRNotification(exerciseName, weight, reps);
+    }
+
+    await invalidateAll();
+  }
+
+  async function handleUpdateLog(logId: number, exerciseName: string, weight: string, reps: number) {
+    const formData = new FormData();
+    formData.set('logId', logId.toString());
+    formData.set('weight', weight);
+    formData.set('reps', reps.toString());
+
+    const response = await fetch('?/updateLog', { method: 'POST', body: formData });
+    const result = await response.json();
+
+    if (result.data?.isPR) {
+      showPRNotification(exerciseName, weight, reps);
+    }
+
+    await invalidateAll();
+  }
+
+  async function handleDeleteLog(logId: number) {
+    const formData = new FormData();
+    formData.set('logId', logId.toString());
+
+    await fetch('?/deleteLog', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  async function handleCompleteSession() {
+    if (!activeSession) return;
+
+    const formData = new FormData();
+    formData.set('sessionId', activeSession.id.toString());
+
+    await fetch('?/completeSession', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  async function handleCancelSession() {
+    if (!activeSession) return;
+
+    const formData = new FormData();
+    formData.set('sessionId', activeSession.id.toString());
+
+    await fetch('?/cancelSession', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  function showPRNotification(exerciseName: string, weight: string | null, reps: number | null) {
+    lastPR = { exerciseName, weight, reps };
+    showPRToast = true;
+
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+      showPRToast = false;
+    }, 4000);
+  }
+
+  function getNextSetNumber(exerciseId: number): number {
+    const logs = sessionLogs[exerciseId] || [];
+    if (logs.length === 0) return 1;
+    return Math.max(...logs.map((l: ExerciseLog) => l.setNumber)) + 1;
+  }
+
+  function isExerciseComplete(exerciseId: number, targetSets: number | null | undefined): boolean {
+    const logs = sessionLogs[exerciseId] || [];
+    if (!targetSets) return logs.length > 0;
+    return logs.length >= targetSets;
+  }
+
+  function getSessionDuration(): string {
+    if (!activeSession) return '';
+    const start = new Date(activeSession.startedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  }
 </script>
 
 <div class="container">
@@ -160,7 +314,136 @@
 
   {#if activeTab === 'today'}
     <div class="today-section">
-      {#if todaysWorkout}
+      {#if activeSession}
+        <!-- Active workout session -->
+        <div class="workout-card today-workout session-active">
+          <div class="workout-header">
+            <div class="workout-title">
+              <span class="session-badge">WORKOUT IN PROGRESS</span>
+              <h2>{activeSession.workoutDay?.name ?? 'Workout'}</h2>
+            </div>
+            <div class="session-info">
+              <span class="session-duration">{getSessionDuration()}</span>
+              <div class="session-actions">
+                <button class="btn btn-secondary btn-sm" onclick={handleCancelSession}>
+                  Cancel
+                </button>
+                <button class="btn btn-primary btn-sm" onclick={handleCompleteSession}>
+                  Complete Workout
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {#if sessionPRs.length > 0}
+            <div class="pr-summary">
+              <span class="pr-icon">PR</span>
+              <span>You've hit {sessionPRs.length} PR{sessionPRs.length > 1 ? 's' : ''} this session!</span>
+            </div>
+          {/if}
+
+          <div class="exercises-list session-exercises">
+            {#each [...(activeSession.workoutDay?.exercises ?? [])].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+              {@const exerciseLogs = sessionLogs[exercise.id!] || []}
+              {@const isComplete = isExerciseComplete(exercise.id!, exercise.targetSets)}
+              {@const previousBest = exercisePreviousBests[exercise.id!]}
+              {@const hasPR = exerciseLogs.some((l: ExerciseLog) => l.isPR)}
+              <div class="exercise-item session-exercise" class:complete={isComplete}>
+                <div class="exercise-main">
+                  <div class="exercise-name-row">
+                    {#if isComplete}
+                      <span class="check-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                      </span>
+                    {/if}
+                    <span class="exercise-name" class:complete={isComplete}>{exercise.name}</span>
+                    {#if hasPR}
+                      <span class="pr-badge">PR</span>
+                    {/if}
+                  </div>
+                  <div class="exercise-details">
+                    {#if exercise.targetSets}
+                      <span class="detail-badge sets">{exerciseLogs.length}/{exercise.targetSets} sets</span>
+                    {/if}
+                    {#if exercise.targetReps}
+                      <span class="detail-badge reps">{exercise.targetReps} reps</span>
+                    {/if}
+                    {#if exercise.targetWeight}
+                      <span class="detail-badge weight">{exercise.targetWeight}</span>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if previousBest}
+                  <div class="previous-best">
+                    Best: {previousBest.weight} x {previousBest.reps} reps
+                  </div>
+                {/if}
+
+                <!-- Logged sets -->
+                {#if exerciseLogs.length > 0}
+                  <div class="logged-sets">
+                    {#each exerciseLogs as log}
+                      <div class="logged-set" class:is-pr={log.isPR}>
+                        <span class="set-number">Set {log.setNumber}</span>
+                        <span class="set-details">{log.weight ?? '-'} x {log.reps ?? '-'}</span>
+                        {#if log.isPR}
+                          <span class="set-pr-badge">PR</span>
+                        {/if}
+                        <button class="icon-btn delete small" onclick={() => handleDeleteLog(log.id)} title="Delete set">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                          </svg>
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+
+                <!-- Log new set form -->
+                {#if !isComplete || !exercise.targetSets}
+                  <form class="log-set-form" onsubmit={(e) => {
+                    e.preventDefault();
+                    const form = e.target as HTMLFormElement;
+                    const weight = (form.elements.namedItem('weight') as HTMLInputElement).value;
+                    const reps = parseInt((form.elements.namedItem('reps') as HTMLInputElement).value);
+                    if (reps) {
+                      handleLogSet(exercise.id!, exercise.name, getNextSetNumber(exercise.id!), weight, reps);
+                      form.reset();
+                      // Pre-fill weight from last set or target
+                      const weightInput = form.elements.namedItem('weight') as HTMLInputElement;
+                      if (exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight) {
+                        weightInput.value = exerciseLogs[exerciseLogs.length - 1].weight!;
+                      } else if (exercise.targetWeight) {
+                        weightInput.value = exercise.targetWeight;
+                      }
+                    }
+                  }}>
+                    <span class="set-label">Set {getNextSetNumber(exercise.id!)}</span>
+                    <input
+                      type="text"
+                      name="weight"
+                      placeholder="Weight"
+                      class="set-input weight"
+                      value={exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight ? exerciseLogs[exerciseLogs.length - 1].weight : (exercise.targetWeight ?? '')}
+                    />
+                    <input
+                      type="number"
+                      name="reps"
+                      placeholder="Reps"
+                      class="set-input reps"
+                      min="1"
+                    />
+                    <button type="submit" class="btn btn-primary btn-sm">Log</button>
+                  </form>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else if todaysWorkout}
         <div class="workout-card today-workout">
           <div class="workout-header">
             <div class="workout-title">
@@ -200,6 +483,12 @@
               </div>
             {/each}
           </div>
+
+          <div class="start-workout-section">
+            <button class="btn btn-primary btn-lg" onclick={() => handleStartSession(todaysWorkout.id!)}>
+              Start Workout
+            </button>
+          </div>
         </div>
       {:else}
         <div class="empty-state">
@@ -237,7 +526,7 @@
             class="routine-select"
             onchange={(e) => {
               const id = parseInt((e.target as HTMLSelectElement).value);
-              selectedRoutine = routines.find(r => r.id === id) || null;
+              selectedRoutine = routines.find((r: WorkoutRoutine) => r.id === id) || null;
             }}
           >
             {#each routines as routine}
@@ -394,6 +683,19 @@
           <button type="submit" class="btn btn-primary">Create Routine</button>
         </div>
       </form>
+    </div>
+  </div>
+{/if}
+
+<!-- PR Toast Notification -->
+{#if showPRToast && lastPR}
+  <div class="pr-toast">
+    <div class="pr-toast-content">
+      <span class="pr-toast-icon">PR</span>
+      <div class="pr-toast-text">
+        <strong>New Personal Record!</strong>
+        <span>{lastPR.exerciseName}: {lastPR.weight} x {lastPR.reps} reps</span>
+      </div>
     </div>
   </div>
 {/if}
@@ -957,6 +1259,309 @@
 
     .weight-btn {
       width: 40px;
+    }
+  }
+
+  /* Session-specific styles */
+  .session-active {
+    border: 2px solid var(--color-primary);
+  }
+
+  .session-badge {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-full);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .session-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-sm);
+  }
+
+  .session-duration {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  .session-actions {
+    display: flex;
+    gap: var(--space-sm);
+  }
+
+  .btn-sm {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 0.85rem;
+  }
+
+  .btn-lg {
+    padding: var(--space-md) var(--space-xl);
+    font-size: 1.1rem;
+  }
+
+  .pr-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-lg);
+    color: #1a1a1a;
+    font-weight: 600;
+  }
+
+  .pr-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: #1a1a1a;
+    color: #FFD700;
+    border-radius: var(--radius-full);
+    font-size: 0.7rem;
+    font-weight: 800;
+  }
+
+  .session-exercise {
+    transition: all var(--transition-fast);
+  }
+
+  .session-exercise.complete {
+    background: rgba(var(--color-success-rgb, 34, 197, 94), 0.05);
+    border-color: var(--color-success);
+  }
+
+  .exercise-name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  .check-icon {
+    color: var(--color-success);
+  }
+
+  .exercise-name.complete {
+    text-decoration: line-through;
+    color: var(--color-text-muted);
+  }
+
+  .pr-badge, .set-pr-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    color: #1a1a1a;
+    border-radius: var(--radius-sm);
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .previous-best {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    margin-top: var(--space-xs);
+    font-style: italic;
+  }
+
+  .logged-sets {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px dashed var(--color-border-light);
+  }
+
+  .logged-set {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+  }
+
+  .logged-set.is-pr {
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+  }
+
+  .set-number {
+    font-weight: 600;
+    color: var(--color-text-muted);
+    min-width: 50px;
+  }
+
+  .set-details {
+    flex: 1;
+    font-weight: 500;
+  }
+
+  .log-set-form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .set-label {
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    min-width: 50px;
+  }
+
+  .set-input {
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    background: var(--color-bg-card);
+  }
+
+  .set-input.weight {
+    width: 100px;
+  }
+
+  .set-input.reps {
+    width: 70px;
+  }
+
+  .set-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  .start-workout-section {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-xl);
+    padding-top: var(--space-xl);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  /* PR Toast */
+  .pr-toast {
+    position: fixed;
+    bottom: var(--space-xl);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  .pr-toast-content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    color: #1a1a1a;
+  }
+
+  .pr-toast-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: #1a1a1a;
+    color: #FFD700;
+    border-radius: var(--radius-full);
+    font-size: 0.9rem;
+    font-weight: 800;
+  }
+
+  .pr-toast-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pr-toast-text strong {
+    font-size: 1rem;
+  }
+
+  .pr-toast-text span {
+    font-size: 0.875rem;
+    opacity: 0.9;
+  }
+
+  @media (max-width: 600px) {
+    .session-info {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .session-actions {
+      justify-content: flex-end;
+    }
+
+    .log-set-form {
+      flex-wrap: wrap;
+    }
+
+    .set-label {
+      width: 100%;
+      margin-bottom: var(--space-xs);
+    }
+
+    .set-input.weight,
+    .set-input.reps {
+      flex: 1;
+      min-width: 80px;
+    }
+
+    .pr-toast {
+      left: var(--space-md);
+      right: var(--space-md);
+      transform: none;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
   }
 </style>
