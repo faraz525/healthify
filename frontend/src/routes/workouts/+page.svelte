@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import { untrack } from 'svelte';
 
   interface Exercise {
     id?: number;
@@ -39,9 +40,24 @@
 
   const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  // Keep selectedRoutine in sync with the routines data
   $effect(() => {
-    if (routines.length > 0 && !selectedRoutine) {
-      selectedRoutine = routines.find(r => r.isActive) || routines[0];
+    if (routines.length > 0) {
+      // Use untrack to read selectedRoutine without creating a dependency
+      const currentSelected = untrack(() => selectedRoutine);
+      if (currentSelected) {
+        // Find the updated version of the currently selected routine
+        const updated = routines.find((r: WorkoutRoutine) => r.id === currentSelected.id);
+        if (updated) {
+          selectedRoutine = updated;
+        } else {
+          // If the selected routine was deleted, select another one
+          selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
+        }
+      } else {
+        // No routine selected yet, pick one
+        selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
+      }
     }
   });
 
@@ -237,7 +253,7 @@
             class="routine-select"
             onchange={(e) => {
               const id = parseInt((e.target as HTMLSelectElement).value);
-              selectedRoutine = routines.find(r => r.id === id) || null;
+              selectedRoutine = routines.find((r: WorkoutRoutine) => r.id === id) || null;
             }}
           >
             {#each routines as routine}
