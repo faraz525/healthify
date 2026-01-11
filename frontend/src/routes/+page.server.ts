@@ -2,21 +2,23 @@ import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getEntries, getEntryByDate, createEntry, updateEntry, deleteEntry, getTodayEntry } from '$lib/server/entries';
 import { getStats } from '$lib/server/stats';
+import { getWorkoutRoutines } from '$lib/server/workouts';
 
-export const load: PageServerLoad = async () => {
-  // Load entries for 3 month range (1 month ago to 2 months ahead)
-  const now = new Date();
-  const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-  const endDate = new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString().split('T')[0];
+export const load: PageServerLoad = async ({ parent }) => {
+  // Get entries from layout (already loaded for all pages)
+  const parentData = await parent();
 
-  const entries = getEntries({ startDate, endDate, limit: 100 });
   const todayEntry = getTodayEntry();
   const stats = getStats(7);
 
+  // Get workout routines for the EntryModal workout type selector
+  const workoutRoutines = getWorkoutRoutines(true);
+
   return {
-    entries,
+    entries: parentData.entries,
     todayEntry,
-    stats
+    stats,
+    workoutRoutines
   };
 };
 

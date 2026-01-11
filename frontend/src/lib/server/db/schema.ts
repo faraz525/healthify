@@ -7,6 +7,7 @@ export const dailyEntries = sqliteTable('daily_entries', {
   date: text('date').notNull().unique(),
   stressLevel: integer('stress_level'),
   workedOut: integer('worked_out', { mode: 'boolean' }).default(false),
+  workoutType: text('workout_type'),
   workoutNotes: text('workout_notes'),
   notes: text('notes'),
   deviceMetrics: text('device_metrics', { mode: 'json' }),

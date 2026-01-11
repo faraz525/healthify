@@ -1,6 +1,13 @@
 <script lang="ts">
   import { workoutTypes, type WorkoutType } from '$lib/config/workoutTypes';
-  import type { WorkoutDay } from '$lib/api';
+
+  // Local type definition instead of importing from API
+  interface WorkoutDay {
+    id: number;
+    name: string;
+    dayOfWeek: number | null;
+    sortOrder: number;
+  }
 
   interface Props {
     value: string | null;

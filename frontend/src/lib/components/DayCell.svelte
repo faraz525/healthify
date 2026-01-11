@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DailyEntry } from '$lib/api';
+  import type { DailyEntry } from '$lib/stores/entries';
   import { getWorkoutDisplay } from '$lib/config/workoutTypes';
 
   interface Props {
@@ -13,11 +13,11 @@
   let { day, entry, isToday = false, isFuture = false, onclick }: Props = $props();
 
   let hasEntry = $derived(!!entry);
-  let hasWorkout = $derived(entry?.worked_out ?? false);
-  let workoutType = $derived(entry?.workout_type ?? null);
+  let hasWorkout = $derived(entry?.workedOut ?? false);
+  let workoutType = $derived(entry?.workoutType ?? null);
   let workoutDisplay = $derived(hasWorkout ? getWorkoutDisplay(workoutType) : null);
-  let hasIssues = $derived((entry?.health_issues?.length ?? 0) > 0);
-  let stressLevel = $derived(entry?.stress_level ?? null);
+  let hasIssues = $derived((entry?.healthIssues?.length ?? 0) > 0);
+  let stressLevel = $derived(entry?.stressLevel ?? null);
 
   function getStressColor(level: number | null): string {
     if (level === null) return 'transparent';
@@ -52,7 +52,7 @@
         </div>
       {/if}
       {#if hasIssues}
-        <div class="issue-indicator" title="{entry?.health_issues.length} health issue(s)">
+        <div class="issue-indicator" title="{entry?.healthIssues.length} health issue(s)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
           </svg>
