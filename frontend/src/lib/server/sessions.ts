@@ -74,7 +74,9 @@ function parseWeight(weightStr: string | null | undefined): number {
 }
 
 // Get the best previous log for an exercise (highest weight * reps combo)
-export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number): { weight: string; reps: number } | null {
+// excludeLogId: exclude a specific log (used when updating a log)
+// forDisplay: when true, excludes the current session (for showing "previous best" to user)
+export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number, excludeLogId?: number): { weight: string; reps: number } | null {
   // Get all previous logs for this exercise
   const logs = db.query.exerciseLogs.findMany({
     where: eq(exerciseLogs.exerciseId, exerciseId),
@@ -84,7 +86,9 @@ export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number
   let best: { weight: string; reps: number; score: number } | null = null;
 
   for (const log of logs) {
-    // Skip logs from the current session if specified
+    // Skip the specific log if we're updating it
+    if (excludeLogId && log.id === excludeLogId) continue;
+    // Skip logs from the excluded session (for display purposes)
     if (excludeSessionId && log.sessionId === excludeSessionId) continue;
 
     const weight = parseWeight(log.weight);
@@ -99,9 +103,10 @@ export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number
   return best ? { weight: best.weight, reps: best.reps } : null;
 }
 
-// Check if a new log is a PR compared to previous best
-export function isPR(exerciseId: number, weight: string, reps: number, excludeSessionId?: number): boolean {
-  const best = getBestPreviousLog(exerciseId, excludeSessionId);
+// Check if a new log is a PR compared to ALL previous logs (including current session)
+export function isPR(exerciseId: number, weight: string, reps: number, excludeLogId?: number): boolean {
+  // Compare against ALL logs (no session exclusion) - only exclude specific log if updating
+  const best = getBestPreviousLog(exerciseId, undefined, excludeLogId);
   if (!best) return true; // First log is always a PR
 
   const newWeight = parseWeight(weight);
@@ -136,8 +141,9 @@ export function logExerciseSet(
 
   if (!exercise) return null;
 
-  // Check if this is a PR
-  const isNewPR = weight && reps ? isPR(exerciseId, weight, reps, sessionId) : false;
+  // Check if this is a PR (compare against ALL previous logs including current session)
+  const isNewPR = weight && reps ? isPR(exerciseId, weight, reps) : false;
+  // Show previous best excluding current session (for display purposes)
   const previousBest = getBestPreviousLog(exerciseId, sessionId);
 
   const result = db.insert(exerciseLogs).values({
@@ -169,8 +175,9 @@ export function updateExerciseLog(
 
   if (!existing) return null;
 
-  // Check if this update is a PR
-  const isNewPR = weight && reps ? isPR(existing.exerciseId, weight, reps, existing.sessionId) : false;
+  // Check if this update is a PR (exclude the log being updated from comparison)
+  const isNewPR = weight && reps ? isPR(existing.exerciseId, weight, reps, existing.id) : false;
+  // Show previous best excluding current session (for display purposes)
   const previousBest = getBestPreviousLog(existing.exerciseId, existing.sessionId);
 
   db.update(exerciseLogs)

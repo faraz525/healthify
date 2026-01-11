@@ -70,8 +70,8 @@ export function getStats(days = 30): Stats {
     count: r.count
   }));
 
-  // Calculate entry streak (consecutive days with entries)
-  const streakDays = calculateStreak(entries, false);
+  // Calculate entry streak (consecutive days with entries) - fetches all entries
+  const streakDays = calculateEntryStreak();
 
   // Calculate workout streak (consecutive days worked out)
   const workoutStreak = calculateWorkoutStreak();
@@ -90,14 +90,15 @@ export function getStats(days = 30): Stats {
   };
 }
 
-function calculateStreak(entries: Array<{ date: string; workedOut: boolean | null }>, workoutOnly: boolean): number {
-  let streakDays = 0;
+function calculateEntryStreak(): number {
+  // Get all entries (not filtered by date range) to calculate true streak
+  const allEntries = db.query.dailyEntries.findMany({
+    orderBy: desc(dailyEntries.date)
+  }).sync();
+
+  const entryDates = new Set(allEntries.map(e => e.date));
+  let streak = 0;
   const today = new Date();
-  const entryDates = new Set(
-    entries
-      .filter(e => !workoutOnly || e.workedOut)
-      .map(e => e.date)
-  );
 
   for (let i = 0; i < 365; i++) {
     const checkDate = new Date(today);
@@ -105,13 +106,13 @@ function calculateStreak(entries: Array<{ date: string; workedOut: boolean | nul
     const dateStr = checkDate.toISOString().split('T')[0];
 
     if (entryDates.has(dateStr)) {
-      streakDays++;
+      streak++;
     } else {
       break;
     }
   }
 
-  return streakDays;
+  return streak;
 }
 
 function calculateWorkoutStreak(): number {
