@@ -2,7 +2,7 @@ import type { Handle } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
 import { validateSession } from '$lib/server/auth';
 
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/signup'];
 
 export const handle: Handle = async ({ event, resolve }) => {
   const sessionId = event.cookies.get('session');
@@ -24,8 +24,8 @@ export const handle: Handle = async ({ event, resolve }) => {
     throw redirect(303, '/login');
   }
 
-  // Redirect logged-in users away from login page
-  if (event.locals.user && event.url.pathname === '/login') {
+  // Redirect logged-in users away from auth pages
+  if (event.locals.user && (event.url.pathname === '/login' || event.url.pathname === '/signup')) {
     throw redirect(303, '/');
   }
 

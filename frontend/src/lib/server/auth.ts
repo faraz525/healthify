@@ -115,3 +115,28 @@ export function cleanExpiredSessions(): void {
   const now = new Date().toISOString();
   db.delete(sessions).where(gt(now, sessions.expiresAt)).run();
 }
+
+export async function createUser(email: string, password: string): Promise<User | null> {
+  // Check if user already exists
+  const existing = getUserByEmail(email);
+  if (existing) return null;
+
+  // Hash password with bcrypt (same as old backend for consistency)
+  const bcrypt = await import('bcrypt');
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const userId = crypto.randomUUID();
+
+  db.insert(users).values({
+    id: userId,
+    email: email.toLowerCase(),
+    passwordHash,
+    role: 'user'
+  }).run();
+
+  return {
+    id: userId,
+    email: email.toLowerCase(),
+    role: 'user'
+  };
+}

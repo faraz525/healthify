@@ -7,15 +7,15 @@
 </script>
 
 <svelte:head>
-  <title>Login - Healthify</title>
+  <title>Sign Up - Healthify</title>
 </svelte:head>
 
-<div class="login-container">
-  <div class="login-card">
-    <div class="login-header">
+<div class="signup-container">
+  <div class="signup-card">
+    <div class="signup-header">
       <span class="logo-icon">🌿</span>
-      <h1>Welcome to Healthify</h1>
-      <p>Sign in to track your health journey</p>
+      <h1>Create Account</h1>
+      <p>Start tracking your health journey</p>
     </div>
 
     {#if form?.error}
@@ -53,29 +53,42 @@
           type="password"
           id="password"
           name="password"
-          placeholder="Your password"
+          placeholder="At least 8 characters"
           required
-          autocomplete="current-password"
+          autocomplete="new-password"
+          minlength="8"
         />
       </div>
 
-      <button type="submit" class="login-btn" disabled={loading}>
+      <div class="form-group">
+        <label for="confirmPassword">Confirm Password</label>
+        <input
+          type="password"
+          id="confirmPassword"
+          name="confirmPassword"
+          placeholder="Confirm your password"
+          required
+          autocomplete="new-password"
+        />
+      </div>
+
+      <button type="submit" class="signup-btn" disabled={loading}>
         {#if loading}
-          Signing in...
+          Creating account...
         {:else}
-          Sign In
+          Create Account
         {/if}
       </button>
     </form>
 
-    <div class="signup-link">
-      Don't have an account? <a href="/signup">Sign up</a>
+    <div class="login-link">
+      Already have an account? <a href="/login">Sign in</a>
     </div>
   </div>
 </div>
 
 <style>
-  .login-container {
+  .signup-container {
     min-height: 100vh;
     display: flex;
     align-items: center;
@@ -84,7 +97,7 @@
     background: var(--color-bg);
   }
 
-  .login-card {
+  .signup-card {
     width: 100%;
     max-width: 400px;
     padding: var(--space-2xl);
@@ -93,7 +106,7 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .login-header {
+  .signup-header {
     text-align: center;
     margin-bottom: var(--space-xl);
   }
@@ -104,7 +117,7 @@
     margin-bottom: var(--space-md);
   }
 
-  .login-header h1 {
+  .signup-header h1 {
     font-family: var(--font-display);
     font-size: 1.5rem;
     font-weight: 600;
@@ -112,7 +125,7 @@
     margin-bottom: var(--space-xs);
   }
 
-  .login-header p {
+  .signup-header p {
     color: var(--color-text-muted);
     font-size: 0.9rem;
   }
@@ -158,7 +171,7 @@
     color: var(--color-text-muted);
   }
 
-  .login-btn {
+  .signup-btn {
     width: 100%;
     padding: var(--space-md) var(--space-lg);
     background: var(--color-primary);
@@ -171,29 +184,29 @@
     transition: all var(--transition-fast);
   }
 
-  .login-btn:hover:not(:disabled) {
+  .signup-btn:hover:not(:disabled) {
     background: var(--color-primary-dark);
     transform: translateY(-1px);
   }
 
-  .login-btn:disabled {
+  .signup-btn:disabled {
     opacity: 0.7;
     cursor: not-allowed;
   }
 
-  .signup-link {
+  .login-link {
     text-align: center;
     margin-top: var(--space-lg);
     color: var(--color-text-muted);
     font-size: 0.9rem;
   }
 
-  .signup-link a {
+  .login-link a {
     color: var(--color-primary);
     font-weight: 500;
   }
 
-  .signup-link a:hover {
+  .login-link a:hover {
     text-decoration: underline;
   }
 </style>
