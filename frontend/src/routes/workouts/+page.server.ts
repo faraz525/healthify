@@ -75,7 +75,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     // Get previous bests for each exercise in the workout
     if (activeSession.workoutDay?.exercises) {
       for (const exercise of activeSession.workoutDay.exercises) {
-        exercisePreviousBests[exercise.id] = getBestPreviousLog(exercise.id, activeSession.id);
+        exercisePreviousBests[exercise.id] = getBestPreviousLog(userId, exercise.id, activeSession.id);
       }
     }
   }

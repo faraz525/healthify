@@ -24,10 +24,50 @@ function verifyWorkoutOwnership(userId: string, workoutDayId: number): boolean {
   return false;
 }
 
+// Helper to get all workout day IDs belonging to a user
+function getUserWorkoutDayIds(userId: string): number[] {
+  // Get standalone workouts (with userId directly set)
+  const standaloneWorkouts = db.query.workoutDays.findMany({
+    where: eq(workoutDays.userId, userId)
+  }).sync();
+
+  // Get workouts from user's routines
+  const routineWorkouts = db.query.workoutDays.findMany({
+    where: eq(workoutDays.routineId, db.query.workoutRoutines.findFirst({
+      where: eq(workoutRoutines.userId, userId)
+    }).sync()?.id ?? -1)
+  }).sync();
+
+  // Also get all workouts from all user's routines
+  const userRoutines = db.query.workoutRoutines.findMany({
+    where: eq(workoutRoutines.userId, userId),
+    with: { days: true }
+  }).sync();
+
+  const routineWorkoutIds = userRoutines.flatMap(r => r.days.map(d => d.id));
+
+  const allIds = new Set([
+    ...standaloneWorkouts.map(w => w.id),
+    ...routineWorkouts.map(w => w.id),
+    ...routineWorkoutIds
+  ]);
+
+  return Array.from(allIds);
+}
+
 // Get the active workout session for user (if any)
 export function getActiveSession(userId: string) {
+  // First, get all workout day IDs that belong to this user
+  const userWorkoutDayIds = getUserWorkoutDayIds(userId);
+
+  if (userWorkoutDayIds.length === 0) return null;
+
+  // Query only sessions that belong to user's workout days
   const session = db.query.workoutSessions.findFirst({
-    where: eq(workoutSessions.status, 'active'),
+    where: and(
+      eq(workoutSessions.status, 'active'),
+      or(...userWorkoutDayIds.map(id => eq(workoutSessions.workoutDayId, id)))
+    ),
     with: {
       workoutDay: {
         with: { exercises: true, routine: true }
@@ -38,11 +78,7 @@ export function getActiveSession(userId: string) {
     }
   }).sync();
 
-  // Verify ownership
-  if (!session) return null;
-  if (!verifyWorkoutOwnership(userId, session.workoutDayId)) return null;
-
-  return session;
+  return session ?? null;
 }
 
 // Get a session by ID (with ownership check)
@@ -93,9 +129,25 @@ function parseWeight(weightStr: string | null | undefined): number {
 }
 
 // Get the best previous log for an exercise (highest weight * reps combo)
-export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number, excludeLogId?: number): { weight: string; reps: number } | null {
+// SECURITY: Now filters by userId to prevent cross-user data leakage
+export function getBestPreviousLog(userId: string, exerciseId: number, excludeSessionId?: number, excludeLogId?: number): { weight: string; reps: number } | null {
+  // Get all workout day IDs belonging to this user
+  const userWorkoutDayIds = getUserWorkoutDayIds(userId);
+  if (userWorkoutDayIds.length === 0) return null;
+
+  // Get all session IDs belonging to user's workouts
+  const userSessions = db.query.workoutSessions.findMany({
+    where: or(...userWorkoutDayIds.map(id => eq(workoutSessions.workoutDayId, id)))
+  }).sync();
+  const userSessionIds = userSessions.map(s => s.id);
+  if (userSessionIds.length === 0) return null;
+
+  // Query exercise logs only from user's sessions
   const logs = db.query.exerciseLogs.findMany({
-    where: eq(exerciseLogs.exerciseId, exerciseId),
+    where: and(
+      eq(exerciseLogs.exerciseId, exerciseId),
+      or(...userSessionIds.map(id => eq(exerciseLogs.sessionId, id)))
+    ),
     orderBy: [desc(exerciseLogs.completedAt)]
   }).sync();
 
@@ -118,8 +170,9 @@ export function getBestPreviousLog(exerciseId: number, excludeSessionId?: number
 }
 
 // Check if a new log is a PR compared to ALL previous logs
-export function isPR(exerciseId: number, weight: string, reps: number, excludeLogId?: number): boolean {
-  const best = getBestPreviousLog(exerciseId, undefined, excludeLogId);
+// SECURITY: Now requires userId to ensure PR comparison is only against user's own data
+export function isPR(userId: string, exerciseId: number, weight: string, reps: number, excludeLogId?: number): boolean {
+  const best = getBestPreviousLog(userId, exerciseId, undefined, excludeLogId);
   if (!best) return true;
 
   const newWeight = parseWeight(weight);
@@ -149,8 +202,8 @@ export function logExerciseSet(
 
   if (!exercise) return null;
 
-  const isNewPR = weight && reps ? isPR(exerciseId, weight, reps) : false;
-  const previousBest = getBestPreviousLog(exerciseId, sessionId);
+  const isNewPR = weight && reps ? isPR(userId, exerciseId, weight, reps) : false;
+  const previousBest = getBestPreviousLog(userId, exerciseId, sessionId);
 
   const result = db.insert(exerciseLogs).values({
     sessionId,
@@ -186,8 +239,8 @@ export function updateExerciseLog(
   const session = getSession(userId, existing.sessionId);
   if (!session) return null;
 
-  const isNewPR = weight && reps ? isPR(existing.exerciseId, weight, reps, existing.id) : false;
-  const previousBest = getBestPreviousLog(existing.exerciseId, existing.sessionId);
+  const isNewPR = weight && reps ? isPR(userId, existing.exerciseId, weight, reps, existing.id) : false;
+  const previousBest = getBestPreviousLog(userId, existing.exerciseId, existing.sessionId);
 
   db.update(exerciseLogs)
     .set({
