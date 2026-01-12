@@ -259,4 +259,49 @@
   .add-custom-btn:hover {
     background: rgba(var(--color-primary-rgb), 0.1);
   }
+
+  /* Mobile responsiveness - 2 column grid with larger touch targets */
+  @media (max-width: 480px) {
+    .issue-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-xs);
+    }
+
+    .issue-btn {
+      min-height: 56px;
+      padding: var(--space-sm);
+    }
+
+    .issue-icon {
+      font-size: 1.25rem;
+    }
+
+    .issue-name {
+      font-size: 0.7rem;
+    }
+
+    .custom-input {
+      flex-wrap: wrap;
+    }
+
+    .custom-input input {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    .custom-input .btn {
+      flex: 1;
+      min-height: 44px;
+    }
+
+    .add-custom-btn {
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    .remove-btn {
+      width: 28px;
+      height: 28px;
+    }
+  }
 </style>

@@ -6,6 +6,7 @@
   import { entries } from '$lib/stores/entries';
   import Toast from '$lib/components/Toast.svelte';
   import EntryModal from '$lib/components/EntryModal.svelte';
+  import FloatingActionButton from '$lib/components/FloatingActionButton.svelte';
   import type { LayoutData } from './$types';
 
   let { children, data }: { children: any; data: LayoutData } = $props();
@@ -85,6 +86,10 @@
 {/if}
 
 <Toast />
+
+{#if !$modalOpen}
+  <FloatingActionButton />
+{/if}
 
 <style>
   .app {

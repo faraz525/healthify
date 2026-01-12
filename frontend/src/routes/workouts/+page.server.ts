@@ -1,14 +1,11 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
 import {
-  getWorkoutRoutines,
+  getWorkouts,
   getTodaysWorkout,
-  createWorkoutRoutine,
-  updateWorkoutRoutine,
-  deleteWorkoutRoutine,
-  createWorkoutDay,
-  updateWorkoutDay,
-  deleteWorkoutDay,
+  createWorkout,
+  updateWorkout,
+  deleteWorkout,
   createExercise,
   updateExercise,
   deleteExercise
@@ -23,11 +20,12 @@ import {
   cancelSession,
   getSessionPRs,
   getExerciseLogsInSession,
-  getBestPreviousLog
+  getBestPreviousLog,
+  getExerciseHistory
 } from '$lib/server/sessions';
 
 export const load: PageServerLoad = async () => {
-  const routines = getWorkoutRoutines();
+  const workouts = getWorkouts();
   const todaysWorkout = getTodaysWorkout();
   const activeSession = getActiveSession();
 
@@ -71,7 +69,7 @@ export const load: PageServerLoad = async () => {
   }
 
   return {
-    routines,
+    workouts,
     todaysWorkout,
     activeSession,
     sessionLogs,
@@ -81,77 +79,41 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-  createRoutine: async ({ request }) => {
+  // Direct workout actions (no routine required)
+  createWorkout: async ({ request }) => {
     const formData = await request.formData();
     const name = formData.get('name') as string;
-    const description = formData.get('description') as string;
+    const dayOfWeekStr = formData.get('dayOfWeek') as string;
+    const dayOfWeek = dayOfWeekStr ? parseInt(dayOfWeekStr) : null;
 
     if (!name) {
       return fail(400, { error: 'Name is required' });
     }
 
-    const routine = createWorkoutRoutine({ name, description });
-    return { success: true, routine };
+    const workout = createWorkout({ name, dayOfWeek });
+    return { success: true, workout };
   },
 
-  updateRoutine: async ({ request }) => {
+  updateWorkout: async ({ request }) => {
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const data = JSON.parse(formData.get('data') as string);
 
-    const routine = updateWorkoutRoutine(id, data);
-    if (!routine) {
-      return fail(404, { error: 'Routine not found' });
+    const workout = updateWorkout(id, data);
+    if (!workout) {
+      return fail(404, { error: 'Workout not found' });
     }
 
-    return { success: true, routine };
+    return { success: true, workout };
   },
 
-  deleteRoutine: async ({ request }) => {
+  deleteWorkout: async ({ request }) => {
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
 
-    const deleted = deleteWorkoutRoutine(id);
+    const deleted = deleteWorkout(id);
     if (!deleted) {
-      return fail(404, { error: 'Routine not found' });
-    }
-
-    return { success: true };
-  },
-
-  createDay: async ({ request }) => {
-    const formData = await request.formData();
-    const routineId = parseInt(formData.get('routineId') as string);
-    const data = JSON.parse(formData.get('data') as string);
-
-    const day = createWorkoutDay(routineId, data);
-    if (!day) {
-      return fail(404, { error: 'Routine not found' });
-    }
-
-    return { success: true, day };
-  },
-
-  updateDay: async ({ request }) => {
-    const formData = await request.formData();
-    const dayId = parseInt(formData.get('dayId') as string);
-    const data = JSON.parse(formData.get('data') as string);
-
-    const day = updateWorkoutDay(dayId, data);
-    if (!day) {
-      return fail(404, { error: 'Day not found' });
-    }
-
-    return { success: true, day };
-  },
-
-  deleteDay: async ({ request }) => {
-    const formData = await request.formData();
-    const dayId = parseInt(formData.get('dayId') as string);
-
-    const deleted = deleteWorkoutDay(dayId);
-    if (!deleted) {
-      return fail(404, { error: 'Day not found' });
+      return fail(404, { error: 'Workout not found' });
     }
 
     return { success: true };
@@ -310,5 +272,30 @@ export const actions: Actions = {
     }
 
     return { success: true };
+  },
+
+  getExerciseHistory: async ({ request }) => {
+    const formData = await request.formData();
+    const exerciseId = parseInt(formData.get('exerciseId') as string);
+    const limit = parseInt(formData.get('limit') as string) || 20;
+
+    if (!exerciseId) {
+      return fail(400, { error: 'Exercise ID is required' });
+    }
+
+    const history = getExerciseHistory(exerciseId, limit);
+
+    // Group by session and format for display
+    const formattedHistory = history.map(log => ({
+      id: log.id,
+      setNumber: log.setNumber,
+      weight: log.weight,
+      reps: log.reps,
+      isPR: log.isPR,
+      completedAt: log.completedAt,
+      sessionDate: log.session?.startedAt?.split('T')[0] ?? null
+    }));
+
+    return { success: true, history: formattedHistory };
   }
 };

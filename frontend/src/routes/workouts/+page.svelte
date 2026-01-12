@@ -1,7 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
-  import { untrack } from 'svelte';
 
   interface Exercise {
     id?: number;
@@ -14,20 +13,12 @@
     sortOrder: number;
   }
 
-  interface WorkoutDay {
+  interface Workout {
     id?: number;
     name: string;
     dayOfWeek?: number | null;
     sortOrder: number;
     exercises: Exercise[];
-  }
-
-  interface WorkoutRoutine {
-    id?: number;
-    name: string;
-    description?: string | null;
-    isActive?: boolean | null;
-    days: WorkoutDay[];
   }
 
   interface WorkoutSession {
@@ -37,7 +28,7 @@
     startedAt: string;
     completedAt?: string | null;
     notes?: string | null;
-    workoutDay?: WorkoutDay;
+    workoutDay?: Workout;
   }
 
   interface ExerciseLog {
@@ -62,8 +53,8 @@
 
   let { data } = $props<{
     data: {
-      routines: WorkoutRoutine[];
-      todaysWorkout: WorkoutDay | null;
+      workouts: Workout[];
+      todaysWorkout: Workout | null;
       activeSession: WorkoutSession | null;
       sessionLogs: Record<number, ExerciseLog[]>;
       sessionPRs: SessionPR[];
@@ -71,41 +62,35 @@
     }
   }>();
 
-  let routines = $derived(data.routines);
+  let workouts = $derived(data.workouts);
   let todaysWorkout = $derived(data.todaysWorkout);
   let activeSession = $derived(data.activeSession);
   let sessionLogs = $derived(data.sessionLogs);
   let sessionPRs = $derived(data.sessionPRs);
   let exercisePreviousBests = $derived(data.exercisePreviousBests);
-  let selectedRoutine = $state<WorkoutRoutine | null>(null);
-  let activeTab = $state<'today' | 'routines'>('today');
+  let activeTab = $state<'today' | 'workouts' | 'history'>('today');
   let showCreateModal = $state(false);
   let showPRToast = $state(false);
   let lastPR = $state<{ exerciseName: string; weight: string | null; reps: number | null } | null>(null);
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  // Track weight input values for session logging (per exercise)
+  let sessionWeights = $state<Record<number, string>>({});
 
-  // Keep selectedRoutine in sync with the routines data
-  $effect(() => {
-    if (routines.length > 0) {
-      // Use untrack to read selectedRoutine without creating a dependency
-      const currentSelected = untrack(() => selectedRoutine);
-      if (currentSelected) {
-        // Find the updated version of the currently selected routine
-        const updated = routines.find((r: WorkoutRoutine) => r.id === currentSelected.id);
-        if (updated) {
-          selectedRoutine = updated;
-        } else {
-          // If the selected routine was deleted, select another one
-          selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
-        }
-      } else {
-        // No routine selected yet, pick one
-        selectedRoutine = routines.find((r: WorkoutRoutine) => r.isActive) || routines[0];
-      }
-    }
-  });
+  // History tab state
+  let selectedHistoryExercise = $state<{ id: number; name: string } | null>(null);
+  let exerciseHistoryData = $state<Array<{
+    id: number;
+    setNumber: number;
+    weight: string | null;
+    reps: number | null;
+    isPR: boolean;
+    completedAt: string;
+    sessionDate: string | null;
+  }>>([]);
+  let loadingHistory = $state(false);
+
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   function getDayName(dayOfWeek: number | null | undefined): string {
     if (dayOfWeek === null || dayOfWeek === undefined) return 'Flexible';
@@ -118,24 +103,26 @@
     return `${Math.floor(seconds / 60)}m rest`;
   }
 
-  async function handleAddDay() {
-    if (!selectedRoutine?.id) return;
-
+  async function handleUpdateWorkout(workoutId: number, field: string, value: string | number | null) {
     const formData = new FormData();
-    formData.set('routineId', selectedRoutine.id.toString());
-    formData.set('data', JSON.stringify({
-      name: 'New Day',
-      dayOfWeek: null,
-      sortOrder: selectedRoutine.days.length
-    }));
+    formData.set('id', workoutId.toString());
+    formData.set('data', JSON.stringify({ [field]: value }));
 
-    await fetch('?/createDay', { method: 'POST', body: formData });
+    await fetch('?/updateWorkout', { method: 'POST', body: formData });
     await invalidateAll();
   }
 
-  async function handleAddExercise(dayId: number) {
+  async function handleDeleteWorkout(workoutId: number) {
     const formData = new FormData();
-    formData.set('dayId', dayId.toString());
+    formData.set('id', workoutId.toString());
+
+    await fetch('?/deleteWorkout', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  async function handleAddExercise(workoutId: number) {
+    const formData = new FormData();
+    formData.set('dayId', workoutId.toString());
     formData.set('data', JSON.stringify({
       name: 'New Exercise',
       targetSets: 3,
@@ -171,6 +158,33 @@
     }
   }
 
+  // Get the current weight value for session logging (from state, last log, or target)
+  function getSessionWeight(exerciseId: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined): string {
+    // If we have a stored value, use it
+    if (sessionWeights[exerciseId] !== undefined) {
+      return sessionWeights[exerciseId];
+    }
+    // Otherwise, use last logged weight or target
+    if (exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight) {
+      return exerciseLogs[exerciseLogs.length - 1].weight!;
+    }
+    return targetWeight ?? '';
+  }
+
+  // Adjust session weight by delta
+  function adjustSessionWeight(exerciseId: number, delta: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined) {
+    const currentWeight = getSessionWeight(exerciseId, exerciseLogs, targetWeight);
+    const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
+    const numericWeight = match ? parseFloat(match[1]) : 0;
+    const newWeight = Math.max(0, numericWeight + delta);
+    sessionWeights[exerciseId] = newWeight > 0 ? `${newWeight}` : '0';
+  }
+
+  // Update session weight from input
+  function updateSessionWeight(exerciseId: number, value: string) {
+    sessionWeights[exerciseId] = value;
+  }
+
   async function handleDeleteExercise(exerciseId: number) {
     const formData = new FormData();
     formData.set('exerciseId', exerciseId.toString());
@@ -179,21 +193,68 @@
     await invalidateAll();
   }
 
-  async function handleUpdateDay(dayId: number, field: string, value: string | number | null) {
-    const formData = new FormData();
-    formData.set('dayId', dayId.toString());
-    formData.set('data', JSON.stringify({ [field]: value }));
+  // History functions
+  async function loadExerciseHistory(exerciseId: number, exerciseName: string) {
+    selectedHistoryExercise = { id: exerciseId, name: exerciseName };
+    loadingHistory = true;
 
-    await fetch('?/updateDay', { method: 'POST', body: formData });
-    await invalidateAll();
+    const formData = new FormData();
+    formData.set('exerciseId', exerciseId.toString());
+    formData.set('limit', '30');
+
+    const response = await fetch('?/getExerciseHistory', { method: 'POST', body: formData });
+    const result = await response.json();
+
+    if (result.type === 'success' && result.data?.history) {
+      exerciseHistoryData = result.data.history;
+    } else {
+      exerciseHistoryData = [];
+    }
+
+    loadingHistory = false;
   }
 
-  async function handleDeleteDay(dayId: number) {
-    const formData = new FormData();
-    formData.set('dayId', dayId.toString());
+  // Get all exercises from all workouts for history view
+  function getAllExercises(): Array<{ id: number; name: string; workoutName: string }> {
+    const exercises: Array<{ id: number; name: string; workoutName: string }> = [];
+    for (const workout of workouts) {
+      for (const exercise of workout.exercises) {
+        if (exercise.id) {
+          exercises.push({
+            id: exercise.id,
+            name: exercise.name,
+            workoutName: workout.name
+          });
+        }
+      }
+    }
+    return exercises;
+  }
 
-    await fetch('?/deleteDay', { method: 'POST', body: formData });
-    await invalidateAll();
+  // Group history by session date
+  function groupHistoryByDate(history: typeof exerciseHistoryData) {
+    const groups: Record<string, typeof exerciseHistoryData> = {};
+    for (const log of history) {
+      const date = log.sessionDate || 'Unknown';
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(log);
+    }
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }
+
+  // Calculate best set from history
+  function getBestFromHistory(history: typeof exerciseHistoryData) {
+    if (history.length === 0) return null;
+    let best = history[0];
+    let bestScore = (parseFloat(best.weight || '0') || 0) * (best.reps || 0);
+    for (const log of history) {
+      const score = (parseFloat(log.weight || '0') || 0) * (log.reps || 0);
+      if (score > bestScore) {
+        best = log;
+        bestScore = score;
+      }
+    }
+    return best;
   }
 
   // Session management functions
@@ -321,10 +382,17 @@
     </button>
     <button
       class="tab"
-      class:active={activeTab === 'routines'}
-      onclick={() => activeTab = 'routines'}
+      class:active={activeTab === 'workouts'}
+      onclick={() => activeTab = 'workouts'}
     >
-      My Routines
+      My Workouts
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === 'history'}
+      onclick={() => activeTab = 'history'}
+    >
+      History
     </button>
   </div>
 
@@ -423,28 +491,37 @@
                   <form class="log-set-form" onsubmit={(e) => {
                     e.preventDefault();
                     const form = e.target as HTMLFormElement;
-                    const weight = (form.elements.namedItem('weight') as HTMLInputElement).value;
+                    const weight = getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight);
                     const reps = parseInt((form.elements.namedItem('reps') as HTMLInputElement).value);
                     if (reps) {
                       handleLogSet(exercise.id!, exercise.name, getNextSetNumber(exercise.id!), weight, reps);
-                      form.reset();
-                      // Pre-fill weight from last set or target
-                      const weightInput = form.elements.namedItem('weight') as HTMLInputElement;
-                      if (exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight) {
-                        weightInput.value = exerciseLogs[exerciseLogs.length - 1].weight!;
-                      } else if (exercise.targetWeight) {
-                        weightInput.value = exercise.targetWeight;
-                      }
+                      (form.elements.namedItem('reps') as HTMLInputElement).value = '';
+                      // Keep weight for next set (don't reset sessionWeights)
                     }
                   }}>
                     <span class="set-label">Set {getNextSetNumber(exercise.id!)}</span>
-                    <input
-                      type="text"
-                      name="weight"
-                      placeholder="Weight"
-                      class="set-input weight"
-                      value={exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight ? exerciseLogs[exerciseLogs.length - 1].weight : (exercise.targetWeight ?? '')}
-                    />
+                    <div class="session-weight-controls">
+                      <button
+                        type="button"
+                        class="weight-btn minus"
+                        onclick={() => adjustSessionWeight(exercise.id!, -5, exerciseLogs, exercise.targetWeight)}
+                        title="Decrease by 5"
+                      >-5</button>
+                      <input
+                        type="text"
+                        name="weight"
+                        placeholder="Weight"
+                        class="set-input weight"
+                        value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight)}
+                        oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)}
+                      />
+                      <button
+                        type="button"
+                        class="weight-btn plus"
+                        onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight)}
+                        title="Increase by 5"
+                      >+5</button>
+                    </div>
                     <input
                       type="number"
                       name="reps"
@@ -514,164 +591,234 @@
             </svg>
           </div>
           <h3>No workout scheduled for today</h3>
-          <p>Create a routine and assign workouts to days of the week to see your daily workout here.</p>
-          <button class="btn btn-primary" onclick={() => activeTab = 'routines'}>
-            View Routines
+          <p>Create a workout and assign it to today's day of the week to see it here.</p>
+          <button class="btn btn-primary" onclick={() => activeTab = 'workouts'}>
+            View Workouts
           </button>
         </div>
       {/if}
     </div>
-  {:else}
-    <div class="routines-section">
-      {#if routines.length === 0}
+  {:else if activeTab === 'workouts'}
+    <div class="workouts-section">
+      <div class="workouts-header">
+        <h2>My Workouts</h2>
+        <button class="btn btn-primary" onclick={() => showCreateModal = true}>
+          + New Workout
+        </button>
+      </div>
+
+      {#if workouts.length === 0}
         <div class="empty-state">
           <div class="empty-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M12 5v14M5 12h14"/>
             </svg>
           </div>
-          <h3>No workout routines yet</h3>
-          <p>Create your first workout routine to start tracking your gym sessions.</p>
+          <h3>No workouts yet</h3>
+          <p>Create your first workout to start tracking your gym sessions.</p>
           <button class="btn btn-primary" onclick={() => showCreateModal = true}>
-            Create Routine
+            Create Workout
           </button>
         </div>
       {:else}
-        <div class="routines-header">
-          <select
-            class="routine-select"
-            onchange={(e) => {
-              const id = parseInt((e.target as HTMLSelectElement).value);
-              selectedRoutine = routines.find((r: WorkoutRoutine) => r.id === id) || null;
-            }}
-          >
-            {#each routines as routine}
-              <option value={routine.id} selected={routine.id === selectedRoutine?.id}>
-                {routine.name} {routine.isActive ? '(Active)' : ''}
-              </option>
-            {/each}
-          </select>
-          <button class="btn btn-secondary" onclick={() => showCreateModal = true}>
-            + New Routine
-          </button>
-        </div>
+        <div class="workouts-grid">
+          {#each [...workouts].sort((a, b) => a.sortOrder - b.sortOrder) as workout}
+            <div class="workout-card">
+              <div class="workout-card-header">
+                <div class="workout-info">
+                  <select
+                    class="day-select"
+                    value={workout.dayOfWeek ?? ''}
+                    onchange={(e) => {
+                      const val = (e.target as HTMLSelectElement).value;
+                      handleUpdateWorkout(workout.id!, 'dayOfWeek', val === '' ? null : parseInt(val));
+                    }}
+                  >
+                    <option value="">Flexible</option>
+                    {#each dayNames as name, i}
+                      <option value={i}>{name}</option>
+                    {/each}
+                  </select>
+                  <input
+                    type="text"
+                    class="workout-name-input"
+                    value={workout.name}
+                    onblur={(e) => handleUpdateWorkout(workout.id!, 'name', (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+                <button class="icon-btn delete" onclick={() => handleDeleteWorkout(workout.id!)} title="Delete workout">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  </svg>
+                </button>
+              </div>
 
-        {#if selectedRoutine}
-          <div class="routine-content">
-            {#if selectedRoutine.description}
-              <p class="routine-description">{selectedRoutine.description}</p>
-            {/if}
-
-            <div class="days-grid">
-              {#each [...selectedRoutine.days].sort((a, b) => a.sortOrder - b.sortOrder) as day}
-                <div class="day-card">
-                  <div class="day-header">
-                    <div class="day-info">
-                      <select
-                        class="day-select"
-                        value={day.dayOfWeek ?? ''}
-                        onchange={(e) => {
-                          const val = (e.target as HTMLSelectElement).value;
-                          handleUpdateDay(day.id!, 'dayOfWeek', val === '' ? null : parseInt(val));
-                        }}
-                      >
-                        <option value="">Flexible</option>
-                        {#each dayNames as name, i}
-                          <option value={i}>{name}</option>
-                        {/each}
-                      </select>
+              <div class="workout-exercises">
+                {#each [...workout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+                  <div class="exercise-edit-item">
+                    <div class="exercise-edit-row">
                       <input
                         type="text"
-                        class="day-name-input"
-                        value={day.name}
-                        onblur={(e) => handleUpdateDay(day.id!, 'name', (e.target as HTMLInputElement).value)}
+                        class="exercise-name-input"
+                        value={exercise.name}
+                        onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
                       />
+                      <button class="icon-btn delete small" onclick={() => handleDeleteExercise(exercise.id!)} title="Delete exercise">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                      </button>
                     </div>
-                    <button class="icon-btn delete" onclick={() => handleDeleteDay(day.id!)} title="Delete day">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                      </svg>
-                    </button>
-                  </div>
-
-                  <div class="day-exercises">
-                    {#each [...day.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
-                      <div class="exercise-edit-item">
-                        <div class="exercise-edit-row">
+                    <div class="exercise-edit-details">
+                      <div class="detail-input-group">
+                        <label>Sets</label>
+                        <input
+                          type="number"
+                          value={exercise.targetSets ?? ''}
+                          onblur={(e) => handleUpdateExercise(exercise.id!, 'targetSets', parseInt((e.target as HTMLInputElement).value) || null)}
+                        />
+                      </div>
+                      <div class="detail-input-group">
+                        <label>Reps</label>
+                        <input
+                          type="text"
+                          value={exercise.targetReps ?? ''}
+                          placeholder="8-12"
+                          onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
+                        />
+                      </div>
+                      <div class="detail-input-group weight-group">
+                        <label>Weight</label>
+                        <div class="weight-controls">
+                          <button
+                            type="button"
+                            class="weight-btn minus"
+                            onclick={() => adjustWeight(exercise, -5)}
+                            title="Decrease by 5"
+                          >-5</button>
                           <input
                             type="text"
-                            class="exercise-name-input"
-                            value={exercise.name}
-                            onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
+                            class="weight-input"
+                            value={exercise.targetWeight ?? ''}
+                            placeholder="135 lbs"
+                            onblur={(e) => handleUpdateExercise(exercise.id!, 'targetWeight', (e.target as HTMLInputElement).value || null)}
                           />
-                          <button class="icon-btn delete small" onclick={() => handleDeleteExercise(exercise.id!)} title="Delete exercise">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <path d="M18 6L6 18M6 6l12 12"/>
-                            </svg>
-                          </button>
-                        </div>
-                        <div class="exercise-edit-details">
-                          <div class="detail-input-group">
-                            <label>Sets</label>
-                            <input
-                              type="number"
-                              value={exercise.targetSets ?? ''}
-                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetSets', parseInt((e.target as HTMLInputElement).value) || null)}
-                            />
-                          </div>
-                          <div class="detail-input-group">
-                            <label>Reps</label>
-                            <input
-                              type="text"
-                              value={exercise.targetReps ?? ''}
-                              placeholder="8-12"
-                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
-                            />
-                          </div>
-                          <div class="detail-input-group weight-group">
-                            <label>Weight</label>
-                            <div class="weight-controls">
-                              <button
-                                type="button"
-                                class="weight-btn minus"
-                                onclick={() => adjustWeight(exercise, -5)}
-                                title="Decrease by 5"
-                              >-5</button>
-                              <input
-                                type="text"
-                                class="weight-input"
-                                value={exercise.targetWeight ?? ''}
-                                placeholder="135 lbs"
-                                onblur={(e) => handleUpdateExercise(exercise.id!, 'targetWeight', (e.target as HTMLInputElement).value || null)}
-                              />
-                              <button
-                                type="button"
-                                class="weight-btn plus"
-                                onclick={() => adjustWeight(exercise, 5)}
-                                title="Increase by 5"
-                              >+5</button>
-                            </div>
-                          </div>
+                          <button
+                            type="button"
+                            class="weight-btn plus"
+                            onclick={() => adjustWeight(exercise, 5)}
+                            title="Increase by 5"
+                          >+5</button>
                         </div>
                       </div>
-                    {/each}
-                    <button class="add-exercise-btn" onclick={() => handleAddExercise(day.id!)}>
-                      + Add Exercise
-                    </button>
+                    </div>
                   </div>
-                </div>
-              {/each}
-
-              <button class="add-day-card" onclick={handleAddDay}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 5v14M5 12h14"/>
-                </svg>
-                <span>Add Day</span>
-              </button>
+                {/each}
+                <button class="add-exercise-btn" onclick={() => handleAddExercise(workout.id!)}>
+                  + Add Exercise
+                </button>
+              </div>
             </div>
-          </div>
-        {/if}
+          {/each}
+        </div>
       {/if}
+    </div>
+  {:else if activeTab === 'history'}
+    <div class="history-section">
+      <div class="history-layout">
+        <!-- Exercise List Sidebar -->
+        <div class="exercise-list-panel">
+          <h3>Select Exercise</h3>
+          {#if getAllExercises().length === 0}
+            <p class="no-exercises">No exercises found. Create a workout first.</p>
+          {:else}
+            <div class="exercise-list">
+              {#each getAllExercises() as exercise}
+                <button
+                  class="exercise-list-item"
+                  class:selected={selectedHistoryExercise?.id === exercise.id}
+                  onclick={() => loadExerciseHistory(exercise.id, exercise.name)}
+                >
+                  <span class="exercise-list-name">{exercise.name}</span>
+                  <span class="exercise-list-meta">{exercise.workoutName}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- History Detail Panel -->
+        <div class="history-detail-panel">
+          {#if !selectedHistoryExercise}
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </div>
+              <h3>View Your Progress</h3>
+              <p>Select an exercise to see your workout history and track your progression over time.</p>
+            </div>
+          {:else if loadingHistory}
+            <div class="loading-state">
+              <div class="loading-spinner"></div>
+              <p>Loading history...</p>
+            </div>
+          {:else}
+            <div class="history-content">
+              <div class="history-header">
+                <h2>{selectedHistoryExercise.name}</h2>
+                {#if exerciseHistoryData.length > 0}
+                  {@const best = getBestFromHistory(exerciseHistoryData)}
+                  {#if best}
+                    <div class="all-time-best">
+                      <span class="best-label">All-Time Best:</span>
+                      <span class="best-value">{best.weight ?? '-'} x {best.reps ?? '-'} reps</span>
+                      {#if best.isPR}
+                        <span class="pr-badge">PR</span>
+                      {/if}
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+
+              {#if exerciseHistoryData.length === 0}
+                <div class="no-history">
+                  <p>No logged sets for this exercise yet.</p>
+                  <p>Start a workout session and log some sets to track your progress!</p>
+                </div>
+              {:else}
+                <div class="history-sessions">
+                  {#each groupHistoryByDate(exerciseHistoryData) as [date, logs]}
+                    <div class="history-session-card">
+                      <div class="session-date">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span>{date === 'Unknown' ? 'Unknown Date' : new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      </div>
+                      <div class="session-sets">
+                        {#each logs as log}
+                          <div class="history-set" class:is-pr={log.isPR}>
+                            <span class="set-num">Set {log.setNumber}</span>
+                            <span class="set-data">{log.weight ?? '-'} x {log.reps ?? '-'}</span>
+                            {#if log.isPR}
+                              <span class="pr-badge small">PR</span>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
 </div>
@@ -679,24 +826,29 @@
 {#if showCreateModal}
   <div class="modal-overlay" onclick={() => showCreateModal = false}>
     <div class="modal" onclick={(e) => e.stopPropagation()}>
-      <h2>Create Workout Routine</h2>
-      <form method="POST" action="?/createRoutine" use:enhance={() => {
+      <h2>Create Workout</h2>
+      <form method="POST" action="?/createWorkout" use:enhance={() => {
         return async ({ update }) => {
           await update();
           showCreateModal = false;
         };
       }}>
         <div class="form-group">
-          <label for="name">Routine Name</label>
-          <input type="text" id="name" name="name" required placeholder="e.g., Push Pull Legs" />
+          <label for="name">Workout Name</label>
+          <input type="text" id="name" name="name" required placeholder="e.g., Push Day, Leg Day" />
         </div>
         <div class="form-group">
-          <label for="description">Description (optional)</label>
-          <textarea id="description" name="description" rows="3" placeholder="Describe your routine..."></textarea>
+          <label for="dayOfWeek">Schedule (optional)</label>
+          <select id="dayOfWeek" name="dayOfWeek">
+            <option value="">Flexible - No specific day</option>
+            {#each dayNames as name, i}
+              <option value={i}>{name}</option>
+            {/each}
+          </select>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" onclick={() => showCreateModal = false}>Cancel</button>
-          <button type="submit" class="btn btn-primary">Create Routine</button>
+          <button type="submit" class="btn btn-primary">Create Workout</button>
         </div>
       </form>
     </div>
@@ -905,7 +1057,11 @@
     margin-right: auto;
   }
 
-  .routines-header {
+  .workouts-section {
+    padding: var(--space-md) 0;
+  }
+
+  .workouts-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -914,27 +1070,62 @@
     flex-wrap: wrap;
   }
 
-  .routine-select {
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg-card);
-    font-size: 1rem;
-    color: var(--color-text);
-    min-width: 200px;
+  .workouts-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
   }
 
-  .routine-description {
-    color: var(--color-text-muted);
-    margin-bottom: var(--space-xl);
-  }
-
-  .days-grid {
+  .workouts-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: var(--space-lg);
   }
 
+  .workout-card {
+    background: var(--color-bg-card);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-border-light);
+  }
+
+  .workout-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .workout-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .workout-name-input {
+    font-size: 1.125rem;
+    font-weight: 600;
+    font-family: var(--font-display);
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    padding: 0;
+  }
+
+  .workout-name-input:focus {
+    outline: none;
+    border-bottom: 2px solid var(--color-primary);
+  }
+
+  .workout-exercises {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  /* Legacy styles kept for compatibility */
   .day-card {
     background: var(--color-bg-card);
     border-radius: var(--radius-lg);
@@ -1239,13 +1430,13 @@
       gap: var(--space-md);
     }
 
-    .routines-header {
+    .workouts-header {
       flex-direction: column;
       align-items: stretch;
     }
 
-    .routine-select {
-      width: 100%;
+    .workouts-grid {
+      grid-template-columns: 1fr;
     }
 
     .days-grid {
@@ -1274,7 +1465,13 @@
     }
 
     .weight-btn {
-      width: 40px;
+      width: 44px;
+      height: 44px;
+      font-size: 0.85rem;
+    }
+
+    .detail-input-group input {
+      min-height: 44px;
     }
   }
 
@@ -1461,6 +1658,51 @@
     width: 100px;
   }
 
+  .session-weight-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .session-weight-controls .set-input.weight {
+    flex: 1;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .session-weight-controls .weight-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+  }
+
+  .session-weight-controls .weight-btn.minus {
+    background: var(--color-danger-light);
+    color: var(--color-danger);
+  }
+
+  .session-weight-controls .weight-btn.minus:hover {
+    background: var(--color-danger);
+    color: white;
+  }
+
+  .session-weight-controls .weight-btn.plus {
+    background: var(--color-success-light);
+    color: var(--color-success);
+  }
+
+  .session-weight-controls .weight-btn.plus:hover {
+    background: var(--color-success);
+    color: white;
+  }
+
   .set-input.reps {
     width: 70px;
   }
@@ -1561,6 +1803,22 @@
     .set-input.reps {
       flex: 1;
       min-width: 80px;
+      min-height: 44px;
+    }
+
+    .session-weight-controls {
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .session-weight-controls .weight-btn {
+      width: 44px;
+      height: 44px;
+      font-size: 0.9rem;
+    }
+
+    .session-weight-controls .set-input.weight {
+      min-width: 60px;
     }
 
     .pr-toast {
@@ -1578,6 +1836,272 @@
         opacity: 1;
         transform: translateY(0);
       }
+    }
+  }
+
+  /* History Section Styles */
+  .history-section {
+    min-height: 400px;
+  }
+
+  .history-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-xl);
+    min-height: 500px;
+  }
+
+  .exercise-list-panel {
+    background: var(--color-bg-card);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-border-light);
+    height: fit-content;
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+  }
+
+  .exercise-list-panel h3 {
+    font-size: 1rem;
+    margin-bottom: var(--space-md);
+    color: var(--color-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .no-exercises {
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    text-align: center;
+    padding: var(--space-lg);
+  }
+
+  .exercise-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .exercise-list-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    text-align: left;
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+    min-height: 44px;
+  }
+
+  .exercise-list-item:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-border-light);
+  }
+
+  .exercise-list-item.selected {
+    background: rgba(var(--color-primary-rgb), 0.1);
+    border-color: var(--color-primary);
+  }
+
+  .exercise-list-name {
+    font-weight: 600;
+    color: var(--color-text);
+    font-size: 0.9rem;
+  }
+
+  .exercise-list-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .history-detail-panel {
+    background: var(--color-bg-card);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xl);
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--color-border-light);
+    min-height: 400px;
+  }
+
+  .history-detail-panel .empty-state {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2xl);
+    gap: var(--space-md);
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .history-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xl);
+  }
+
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .history-header h2 {
+    font-size: 1.5rem;
+    margin: 0;
+  }
+
+  .all-time-best {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 165, 0, 0.1) 100%);
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+  }
+
+  .best-label {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+  }
+
+  .best-value {
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .no-history {
+    text-align: center;
+    padding: var(--space-2xl);
+    color: var(--color-text-muted);
+  }
+
+  .no-history p {
+    margin-bottom: var(--space-sm);
+  }
+
+  .history-sessions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .history-session-card {
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border-light);
+  }
+
+  .session-date {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px dashed var(--color-border-light);
+  }
+
+  .session-date svg {
+    opacity: 0.6;
+  }
+
+  .session-sets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .history-set {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--color-bg-card);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    min-height: 36px;
+  }
+
+  .history-set.is-pr {
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+  }
+
+  .set-num {
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+  }
+
+  .set-data {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .pr-badge.small {
+    padding: 1px 4px;
+    font-size: 0.6rem;
+  }
+
+  @media (max-width: 768px) {
+    .history-layout {
+      grid-template-columns: 1fr;
+      gap: var(--space-lg);
+    }
+
+    .exercise-list-panel {
+      max-height: none;
+    }
+
+    .exercise-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-sm);
+    }
+
+    .exercise-list-item {
+      padding: var(--space-md);
+    }
+
+    .history-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .all-time-best {
+      width: 100%;
+      justify-content: center;
     }
   }
 </style>

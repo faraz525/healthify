@@ -5,7 +5,8 @@
 
   let { value = $bindable() }: Props = $props();
 
-  const levels = Array.from({ length: 10 }, (_, i) => i + 1);
+  // Default to 5 for display purposes, but track if user has set it
+  let displayValue = $derived(value ?? 5);
 
   function getColor(level: number): string {
     if (level <= 3) return 'var(--color-success)';
@@ -14,7 +15,7 @@
   }
 
   function getLabel(level: number | null): string {
-    if (level === null) return 'Not set';
+    if (level === null) return 'Drag to set stress level';
     if (level <= 2) return 'Very calm';
     if (level <= 4) return 'Relaxed';
     if (level <= 6) return 'Moderate';
@@ -22,27 +23,40 @@
     return 'Very stressed';
   }
 
-  function handleClick(level: number) {
-    value = value === level ? null : level;
+  function handleInput(e: Event) {
+    const target = e.target as HTMLInputElement;
+    value = parseInt(target.value);
   }
+
+  // Calculate gradient stop position based on value
+  let gradientPercent = $derived(((displayValue - 1) / 9) * 100);
 </script>
 
 <div class="stress-slider">
-  <div class="slider-track">
-    {#each levels as level}
-      <button
-        class="level-btn"
-        class:active={value === level}
-        class:filled={value !== null && level <= value}
-        style="--level-color: {getColor(level)}"
-        onclick={() => handleClick(level)}
-        aria-label="Stress level {level}"
-      >
-        {level}
-      </button>
-    {/each}
+  <div class="slider-container">
+    <input
+      type="range"
+      min="1"
+      max="10"
+      step="1"
+      value={displayValue}
+      oninput={handleInput}
+      class="stress-range"
+      class:unset={value === null}
+      style="--progress: {gradientPercent}%; --thumb-color: {getColor(displayValue)}"
+      aria-label="Stress level from 1 to 10"
+    />
+    <div class="range-labels">
+      <span>1</span>
+      <span>5</span>
+      <span>10</span>
+    </div>
   </div>
-  <div class="slider-labels">
+
+  <div class="value-display">
+    {#if value !== null}
+      <span class="value-number" style="color: {getColor(value)}">{value}</span>
+    {/if}
     <span class="label-text" style="color: {value ? getColor(value) : 'var(--color-text-muted)'}">
       {getLabel(value)}
     </span>
@@ -56,55 +70,122 @@
     gap: var(--space-md);
   }
 
-  .slider-track {
+  .slider-container {
     display: flex;
+    flex-direction: column;
     gap: var(--space-xs);
   }
 
-  .level-btn {
-    flex: 1;
-    aspect-ratio: 1;
+  .stress-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 12px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(
+      to right,
+      var(--color-success) 0%,
+      var(--color-success) 22%,
+      var(--color-warning) 33%,
+      var(--color-warning) 55%,
+      var(--color-danger) 66%,
+      var(--color-danger) 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+
+  .stress-range.unset {
+    opacity: 0.5;
+  }
+
+  /* Webkit (Chrome, Safari, Edge) */
+  .stress-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: white;
+    border: 4px solid var(--thumb-color, var(--color-primary));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .stress-range::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .stress-range::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.05);
+  }
+
+  /* Firefox */
+  .stress-range::-moz-range-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: white;
+    border: 4px solid var(--thumb-color, var(--color-primary));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    cursor: grab;
+  }
+
+  .stress-range::-moz-range-thumb:hover {
+    transform: scale(1.1);
+  }
+
+  .stress-range::-moz-range-track {
+    height: 12px;
+    border-radius: var(--radius-full);
+    background: transparent;
+  }
+
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 var(--space-sm);
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+
+  .value-display {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: var(--radius-sm);
-    background: var(--color-bg);
-    color: var(--color-text-muted);
-    border: 2px solid var(--color-border);
-    transition: all var(--transition-fast);
+    gap: var(--space-sm);
   }
 
-  .level-btn:hover {
-    border-color: var(--level-color);
-    color: var(--level-color);
-  }
-
-  .level-btn.filled {
-    background: var(--level-color);
-    border-color: var(--level-color);
-    color: white;
-    opacity: 0.3;
-  }
-
-  .level-btn.active {
-    background: var(--level-color);
-    border-color: var(--level-color);
-    color: white;
-    opacity: 1;
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--level-color) 40%, transparent);
-  }
-
-  .slider-labels {
-    display: flex;
-    justify-content: center;
+  .value-number {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
   }
 
   .label-text {
     font-size: 0.875rem;
     font-weight: 500;
     transition: color var(--transition-fast);
+  }
+
+  /* Mobile optimizations */
+  @media (max-width: 480px) {
+    .stress-range {
+      height: 16px;
+    }
+
+    .stress-range::-webkit-slider-thumb {
+      width: 48px;
+      height: 48px;
+    }
+
+    .stress-range::-moz-range-thumb {
+      width: 48px;
+      height: 48px;
+    }
   }
 </style>

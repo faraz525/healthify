@@ -46,10 +46,10 @@ export const workoutRoutines = sqliteTable('workout_routines', {
   updatedAt: text('updated_at')
 });
 
-// Workout Days table
+// Workouts table (formerly workout_days - now standalone without requiring a routine)
 export const workoutDays = sqliteTable('workout_days', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  routineId: integer('routine_id').notNull().references(() => workoutRoutines.id, { onDelete: 'cascade' }),
+  routineId: integer('routine_id').references(() => workoutRoutines.id, { onDelete: 'cascade' }), // Optional - for backwards compatibility
   name: text('name').notNull(),
   dayOfWeek: integer('day_of_week'),
   sortOrder: integer('sort_order').default(0)
@@ -88,7 +88,7 @@ export const workoutDaysRelations = relations(workoutDays, ({ one, many }) => ({
   routine: one(workoutRoutines, {
     fields: [workoutDays.routineId],
     references: [workoutRoutines.id]
-  }),
+  }), // Optional relation - workouts can exist without a routine
   exercises: many(exercises)
 }));
 

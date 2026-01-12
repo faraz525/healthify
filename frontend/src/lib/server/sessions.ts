@@ -1,6 +1,7 @@
 import { db } from './db';
 import { workoutSessions, exerciseLogs, exercises, workoutDays } from './db/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import { getEntryByDate, createEntry, updateEntry } from './entries';
 
 export type WorkoutSession = typeof workoutSessions.$inferSelect;
 export type ExerciseLog = typeof exerciseLogs.$inferSelect;
@@ -211,22 +212,103 @@ export function deleteExerciseLog(logId: number): boolean {
 
 // Complete the current workout session
 export function completeSession(sessionId: number, notes?: string): WorkoutSession | null {
+  // Get full session with workout day and exercise logs for summary generation
   const session = db.query.workoutSessions.findFirst({
-    where: eq(workoutSessions.id, sessionId)
+    where: eq(workoutSessions.id, sessionId),
+    with: {
+      workoutDay: true,
+      exerciseLogs: {
+        with: { exercise: true }
+      }
+    }
   }).sync();
 
   if (!session || session.status !== 'active') return null;
 
+  const completedAt = new Date().toISOString();
+
   db.update(workoutSessions)
     .set({
       status: 'completed',
-      completedAt: new Date().toISOString(),
+      completedAt,
       notes: notes ?? session.notes
     })
     .where(eq(workoutSessions.id, sessionId))
     .run();
 
+  // Auto-sync to daily calendar entry
+  syncSessionToCalendar(session, completedAt);
+
   return getSession(sessionId) as WorkoutSession;
+}
+
+// Sync completed workout session to daily calendar entry
+function syncSessionToCalendar(session: any, completedAt: string): void {
+  // Get the date from session start time
+  const sessionDate = session.startedAt.split('T')[0];
+
+  // Generate workout summary
+  const workoutSummary = generateWorkoutSummary(session, completedAt);
+  const workoutType = session.workoutDay?.name ?? 'Workout';
+
+  // Check if entry exists for this date
+  const existingEntry = getEntryByDate(sessionDate);
+
+  if (existingEntry) {
+    // Update existing entry with workout data
+    updateEntry(sessionDate, {
+      workedOut: true,
+      workoutType,
+      workoutNotes: workoutSummary
+    });
+  } else {
+    // Create new entry with workout data
+    createEntry({
+      date: sessionDate,
+      workedOut: true,
+      workoutType,
+      workoutNotes: workoutSummary,
+      healthIssues: []
+    });
+  }
+}
+
+// Generate human-readable workout summary
+function generateWorkoutSummary(session: any, completedAt: string): string {
+  const logs = session.exerciseLogs || [];
+
+  // Calculate duration
+  const startTime = new Date(session.startedAt);
+  const endTime = new Date(completedAt);
+  const durationMins = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+
+  // Group logs by exercise
+  const exerciseGroups: Record<string, any[]> = {};
+  for (const log of logs) {
+    const name = log.exercise?.name ?? 'Unknown';
+    if (!exerciseGroups[name]) exerciseGroups[name] = [];
+    exerciseGroups[name].push(log);
+  }
+
+  // Build summary lines
+  const lines: string[] = [`${durationMins} min session`];
+
+  for (const [name, exLogs] of Object.entries(exerciseGroups)) {
+    const sets = exLogs.length;
+    // Find best set (highest weight * reps)
+    const bestSet = exLogs.reduce((best, log) => {
+      const score = (parseFloat(log.weight) || 0) * (log.reps || 0);
+      const bestScore = (parseFloat(best.weight) || 0) * (best.reps || 0);
+      return score > bestScore ? log : best;
+    }, exLogs[0]);
+
+    const prCount = exLogs.filter((l: any) => l.isPR).length;
+    const prText = prCount > 0 ? ` (${prCount} PR${prCount > 1 ? 's' : ''})` : '';
+
+    lines.push(`${name}: ${sets} sets, best ${bestSet.weight ?? '-'} x ${bestSet.reps ?? '-'}${prText}`);
+  }
+
+  return lines.join('\n');
 }
 
 // Cancel the current workout session

@@ -15,9 +15,12 @@
   let hasEntry = $derived(!!entry);
   let hasWorkout = $derived(entry?.workedOut ?? false);
   let workoutType = $derived(entry?.workoutType ?? null);
+  let workoutNotes = $derived(entry?.workoutNotes ?? null);
   let workoutDisplay = $derived(hasWorkout ? getWorkoutDisplay(workoutType) : null);
   let hasIssues = $derived((entry?.healthIssues?.length ?? 0) > 0);
   let stressLevel = $derived(entry?.stressLevel ?? null);
+  // Check if workout notes contain PR (from auto-synced sessions)
+  let hasPR = $derived(workoutNotes?.includes('PR') ?? false);
 
   function getStressColor(level: number | null): string {
     if (level === null) return 'transparent';
@@ -47,8 +50,11 @@
         ></div>
       {/if}
       {#if hasWorkout && workoutDisplay}
-        <div class="workout-indicator" class:has-emoji={workoutDisplay.emoji} title={workoutType || 'Worked out'}>
+        <div class="workout-indicator" class:has-emoji={workoutDisplay.emoji} title={workoutNotes || workoutType || 'Worked out'}>
           <span class="workout-text">{workoutDisplay.text}</span>
+          {#if hasPR}
+            <span class="pr-badge" title="Personal Record!">!</span>
+          {/if}
         </div>
       {/if}
       {#if hasIssues}
@@ -65,6 +71,8 @@
 <style>
   .day-cell {
     aspect-ratio: 1;
+    min-height: 44px;
+    min-width: 44px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -141,6 +149,20 @@
     font-weight: normal;
   }
 
+  .pr-badge {
+    font-size: 0.55rem;
+    font-weight: 800;
+    color: white;
+    background: var(--color-warning);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 1px;
+  }
+
   .issue-indicator {
     color: var(--color-warning);
     display: flex;
@@ -150,13 +172,15 @@
   /* Mobile responsiveness */
   @media (max-width: 480px) {
     .day-cell {
+      min-height: 48px;
+      min-width: 48px;
       gap: 2px;
-      padding: 2px;
+      padding: 4px;
       border-radius: var(--radius-sm);
     }
 
     .day-number {
-      font-size: 0.8rem;
+      font-size: 0.85rem;
     }
 
     .indicators {
@@ -164,21 +188,27 @@
     }
 
     .stress-dot {
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
     }
 
     .workout-text {
-      font-size: 0.5rem;
+      font-size: 0.55rem;
     }
 
     .workout-indicator.has-emoji .workout-text {
-      font-size: 0.6rem;
+      font-size: 0.65rem;
+    }
+
+    .pr-badge {
+      width: 10px;
+      height: 10px;
+      font-size: 0.5rem;
     }
 
     .issue-indicator svg {
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
     }
   }
 </style>
