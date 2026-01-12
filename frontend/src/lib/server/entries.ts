@@ -18,10 +18,15 @@ export type EntryInput = {
 };
 
 export function getEntryByDate(userId: string, date: string) {
-  return db.query.dailyEntries.findFirst({
-    where: and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)),
-    with: { healthIssues: true }
-  }).sync();
+  try {
+    return db.query.dailyEntries.findFirst({
+      where: and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)),
+      with: { healthIssues: true }
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get entry by date:', err);
+    return undefined;
+  }
 }
 
 export function getEntries(userId: string, options: {
@@ -30,86 +35,53 @@ export function getEntries(userId: string, options: {
   limit?: number;
   offset?: number;
 } = {}) {
-  const { startDate, endDate, limit = 30, offset = 0 } = options;
+  try {
+    const { startDate, endDate, limit = 30, offset = 0 } = options;
 
-  const conditions = [eq(dailyEntries.userId, userId)];
-  if (startDate) conditions.push(gte(dailyEntries.date, startDate));
-  if (endDate) conditions.push(lte(dailyEntries.date, endDate));
+    const conditions = [eq(dailyEntries.userId, userId)];
+    if (startDate) conditions.push(gte(dailyEntries.date, startDate));
+    if (endDate) conditions.push(lte(dailyEntries.date, endDate));
 
-  return db.query.dailyEntries.findMany({
-    where: and(...conditions),
-    with: { healthIssues: true },
-    orderBy: [desc(dailyEntries.date)],
-    limit: Math.min(limit, 100),
-    offset
-  }).sync();
+    return db.query.dailyEntries.findMany({
+      where: and(...conditions),
+      with: { healthIssues: true },
+      orderBy: [desc(dailyEntries.date)],
+      limit: Math.min(limit, 100),
+      offset
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get entries:', err);
+    return [];
+  }
 }
 
 // Uses a transaction to ensure atomic creation of entry and health issues
 export function createEntry(userId: string, data: EntryInput) {
-  const { healthIssues: issues, ...entryData } = data;
+  try {
+    const { healthIssues: issues, ...entryData } = data;
 
-  // Use a transaction to atomically create entry and health issues
-  const createEntryTx = sqlite.transaction(() => {
-    const result = db.insert(dailyEntries).values({
-      userId,
-      date: entryData.date,
-      stressLevel: entryData.stressLevel,
-      workedOut: entryData.workedOut ?? false,
-      workoutType: entryData.workoutType,
-      workoutNotes: entryData.workoutNotes,
-      notes: entryData.notes
-    }).returning().all();
+    // Use a transaction to atomically create entry and health issues
+    const createEntryTx = sqlite.transaction(() => {
+      const result = db.insert(dailyEntries).values({
+        userId,
+        date: entryData.date,
+        stressLevel: entryData.stressLevel,
+        workedOut: entryData.workedOut ?? false,
+        workoutType: entryData.workoutType,
+        workoutNotes: entryData.workoutNotes,
+        notes: entryData.notes
+      }).returning().all();
 
-    const entry = result[0];
+      const entry = result[0];
+      if (!entry) {
+        console.error('Failed to create entry: No result returned');
+        return null;
+      }
 
-    if (issues && issues.length > 0) {
-      db.insert(healthIssues).values(
-        issues.map(issue => ({
-          dailyEntryId: entry.id,
-          issueType: issue.issueType,
-          severity: issue.severity,
-          notes: issue.notes,
-          timeOfDay: issue.timeOfDay
-        }))
-      ).run();
-    }
-
-    return entry;
-  });
-
-  createEntryTx();
-  return getEntryByDate(userId, data.date);
-}
-
-// Uses a transaction to ensure atomic update of entry and health issues
-export function updateEntry(userId: string, date: string, data: Partial<EntryInput>) {
-  const existing = getEntryByDate(userId, date);
-  if (!existing) return null;
-
-  const { healthIssues: issues, ...entryData } = data;
-
-  // Use a transaction to atomically update entry fields and health issues
-  const updateEntryTx = sqlite.transaction(() => {
-    // Update entry fields
-    if (Object.keys(entryData).length > 0) {
-      db.update(dailyEntries)
-        .set({
-          ...entryData,
-          updatedAt: new Date().toISOString()
-        })
-        .where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)))
-        .run();
-    }
-
-    // Replace health issues if provided
-    if (issues !== undefined) {
-      db.delete(healthIssues).where(eq(healthIssues.dailyEntryId, existing.id)).run();
-
-      if (issues.length > 0) {
+      if (issues && issues.length > 0) {
         db.insert(healthIssues).values(
           issues.map(issue => ({
-            dailyEntryId: existing.id,
+            dailyEntryId: entry.id,
             issueType: issue.issueType,
             severity: issue.severity,
             notes: issue.notes,
@@ -117,19 +89,76 @@ export function updateEntry(userId: string, date: string, data: Partial<EntryInp
           }))
         ).run();
       }
-    }
-  });
 
-  updateEntryTx();
-  return getEntryByDate(userId, date);
+      return entry;
+    });
+
+    createEntryTx();
+    return getEntryByDate(userId, data.date);
+  } catch (err) {
+    console.error('Failed to create entry:', err);
+    return null;
+  }
+}
+
+// Uses a transaction to ensure atomic update of entry and health issues
+export function updateEntry(userId: string, date: string, data: Partial<EntryInput>) {
+  try {
+    const existing = getEntryByDate(userId, date);
+    if (!existing) return null;
+
+    const { healthIssues: issues, ...entryData } = data;
+
+    // Use a transaction to atomically update entry fields and health issues
+    const updateEntryTx = sqlite.transaction(() => {
+      // Update entry fields
+      if (Object.keys(entryData).length > 0) {
+        db.update(dailyEntries)
+          .set({
+            ...entryData,
+            updatedAt: new Date().toISOString()
+          })
+          .where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)))
+          .run();
+      }
+
+      // Replace health issues if provided
+      if (issues !== undefined) {
+        db.delete(healthIssues).where(eq(healthIssues.dailyEntryId, existing.id)).run();
+
+        if (issues.length > 0) {
+          db.insert(healthIssues).values(
+            issues.map(issue => ({
+              dailyEntryId: existing.id,
+              issueType: issue.issueType,
+              severity: issue.severity,
+              notes: issue.notes,
+              timeOfDay: issue.timeOfDay
+            }))
+          ).run();
+        }
+      }
+    });
+
+    updateEntryTx();
+    return getEntryByDate(userId, date);
+  } catch (err) {
+    console.error('Failed to update entry:', err);
+    return null;
+  }
 }
 
 export function deleteEntry(userId: string, date: string) {
-  const existing = getEntryByDate(userId, date);
-  if (!existing) return false;
+  try {
+    const existing = getEntryByDate(userId, date);
+    if (!existing) return false;
 
-  db.delete(dailyEntries).where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date))).run();
-  return true;
+    db.delete(dailyEntries).where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date))).run();
+    return true;
+  } catch (err) {
+    console.error('Failed to delete entry:', err);
+    return false;
+  }
 }
 
 export function getTodayEntry(userId: string) {
