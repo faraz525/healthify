@@ -2,49 +2,75 @@ import { db } from './db';
 import { workoutRoutines, workoutDays, exercises } from './db/schema';
 import { eq, asc, and, or, isNull } from 'drizzle-orm';
 
+// Database error class for consistent error handling
+class DatabaseError extends Error {
+  constructor(operation: string, cause?: unknown) {
+    super(`Database operation failed: ${operation}`);
+    this.name = 'DatabaseError';
+    this.cause = cause;
+  }
+}
+
 // ============================================
 // Direct Workout Functions (No Routine Required)
 // ============================================
 
 export function getWorkouts(userId: string) {
-  return db.query.workoutDays.findMany({
-    where: or(
-      eq(workoutDays.userId, userId),
-      // Also include workouts from user's routines
-      and(
-        isNull(workoutDays.userId),
-        eq(workoutDays.routineId, db.query.workoutRoutines.findFirst({
-          where: eq(workoutRoutines.userId, userId)
-        }).sync()?.id ?? -1)
-      )
-    ),
-    with: { exercises: true },
-    orderBy: [asc(workoutDays.sortOrder)]
-  }).sync();
+  try {
+    const userRoutine = db.query.workoutRoutines.findFirst({
+      where: eq(workoutRoutines.userId, userId)
+    }).sync();
+
+    return db.query.workoutDays.findMany({
+      where: or(
+        eq(workoutDays.userId, userId),
+        // Also include workouts from user's routines
+        and(
+          isNull(workoutDays.userId),
+          eq(workoutDays.routineId, userRoutine?.id ?? -1)
+        )
+      ),
+      with: { exercises: true },
+      orderBy: [asc(workoutDays.sortOrder)]
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get workouts:', err);
+    return [];
+  }
 }
 
 export function getWorkout(userId: string, id: number) {
-  const workout = db.query.workoutDays.findFirst({
-    where: eq(workoutDays.id, id),
-    with: { exercises: true, routine: true }
-  }).sync();
+  try {
+    const workout = db.query.workoutDays.findFirst({
+      where: eq(workoutDays.id, id),
+      with: { exercises: true, routine: true }
+    }).sync();
 
-  // Verify ownership - workout belongs to user directly or through their routine
-  if (!workout) return null;
-  if (workout.userId === userId) return workout;
-  if (workout.routine && workout.routine.userId === userId) return workout;
+    // Verify ownership - workout belongs to user directly or through their routine
+    if (!workout) return null;
+    if (workout.userId === userId) return workout;
+    if (workout.routine && workout.routine.userId === userId) return workout;
 
-  return null;
+    return null;
+  } catch (err) {
+    console.error('Failed to get workout:', err);
+    return null;
+  }
 }
 
 export function getTodaysWorkout(userId: string) {
-  // JavaScript: Sunday=0, Monday=1... we need Monday=0
-  const jsDay = new Date().getDay();
-  const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
+  try {
+    // JavaScript: Sunday=0, Monday=1... we need Monday=0
+    const jsDay = new Date().getDay();
+    const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
 
-  // Find user's workout assigned to today
-  const workouts = getWorkouts(userId);
-  return workouts.find(w => w.dayOfWeek === dayOfWeek) || null;
+    // Find user's workout assigned to today
+    const workouts = getWorkouts(userId);
+    return workouts.find(w => w.dayOfWeek === dayOfWeek) || null;
+  } catch (err) {
+    console.error('Failed to get today\'s workout:', err);
+    return null;
+  }
 }
 
 export type WorkoutInput = {
@@ -63,31 +89,40 @@ export type WorkoutInput = {
 };
 
 export function createWorkout(userId: string, data: WorkoutInput) {
-  const result = db.insert(workoutDays).values({
-    userId,
-    name: data.name,
-    dayOfWeek: data.dayOfWeek,
-    sortOrder: data.sortOrder ?? 0
-  }).returning().all();
+  try {
+    const result = db.insert(workoutDays).values({
+      userId,
+      name: data.name,
+      dayOfWeek: data.dayOfWeek,
+      sortOrder: data.sortOrder ?? 0
+    }).returning().all();
 
-  const workout = result[0];
+    const workout = result[0];
+    if (!workout) {
+      console.error('Failed to create workout: No result returned');
+      return null;
+    }
 
-  if (data.exercises && data.exercises.length > 0) {
-    db.insert(exercises).values(
-      data.exercises.map(ex => ({
-        workoutDayId: workout.id,
-        name: ex.name,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetWeight: ex.targetWeight,
-        restSeconds: ex.restSeconds,
-        notes: ex.notes,
-        sortOrder: ex.sortOrder ?? 0
-      }))
-    ).run();
+    if (data.exercises && data.exercises.length > 0) {
+      db.insert(exercises).values(
+        data.exercises.map(ex => ({
+          workoutDayId: workout.id,
+          name: ex.name,
+          targetSets: ex.targetSets,
+          targetReps: ex.targetReps,
+          targetWeight: ex.targetWeight,
+          restSeconds: ex.restSeconds,
+          notes: ex.notes,
+          sortOrder: ex.sortOrder ?? 0
+        }))
+      ).run();
+    }
+
+    return getWorkout(userId, workout.id);
+  } catch (err) {
+    console.error('Failed to create workout:', err);
+    return null;
   }
-
-  return getWorkout(userId, workout.id);
 }
 
 export function updateWorkout(userId: string, id: number, data: Partial<{
@@ -95,18 +130,28 @@ export function updateWorkout(userId: string, id: number, data: Partial<{
   dayOfWeek: number | null;
   sortOrder: number;
 }>) {
-  const existing = getWorkout(userId, id);
-  if (!existing) return null;
+  try {
+    const existing = getWorkout(userId, id);
+    if (!existing) return null;
 
-  db.update(workoutDays).set(data).where(eq(workoutDays.id, id)).run();
-  return getWorkout(userId, id);
+    db.update(workoutDays).set(data).where(eq(workoutDays.id, id)).run();
+    return getWorkout(userId, id);
+  } catch (err) {
+    console.error('Failed to update workout:', err);
+    return null;
+  }
 }
 
 export function deleteWorkout(userId: string, id: number) {
-  const existing = getWorkout(userId, id);
-  if (!existing) return false;
-  db.delete(workoutDays).where(eq(workoutDays.id, id)).run();
-  return true;
+  try {
+    const existing = getWorkout(userId, id);
+    if (!existing) return false;
+    db.delete(workoutDays).where(eq(workoutDays.id, id)).run();
+    return true;
+  } catch (err) {
+    console.error('Failed to delete workout:', err);
+    return false;
+  }
 }
 
 // ============================================
@@ -114,30 +159,40 @@ export function deleteWorkout(userId: string, id: number) {
 // ============================================
 
 export function getWorkoutRoutines(userId: string, activeOnly = true) {
-  const conditions = [eq(workoutRoutines.userId, userId)];
-  if (activeOnly) conditions.push(eq(workoutRoutines.isActive, true));
+  try {
+    const conditions = [eq(workoutRoutines.userId, userId)];
+    if (activeOnly) conditions.push(eq(workoutRoutines.isActive, true));
 
-  return db.query.workoutRoutines.findMany({
-    where: and(...conditions),
-    with: {
-      days: {
-        with: { exercises: true },
-        orderBy: [asc(workoutDays.sortOrder)]
+    return db.query.workoutRoutines.findMany({
+      where: and(...conditions),
+      with: {
+        days: {
+          with: { exercises: true },
+          orderBy: [asc(workoutDays.sortOrder)]
+        }
       }
-    }
-  }).sync();
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get workout routines:', err);
+    return [];
+  }
 }
 
 export function getWorkoutRoutine(userId: string, id: number) {
-  return db.query.workoutRoutines.findFirst({
-    where: and(eq(workoutRoutines.id, id), eq(workoutRoutines.userId, userId)),
-    with: {
-      days: {
-        with: { exercises: true },
-        orderBy: [asc(workoutDays.sortOrder)]
+  try {
+    return db.query.workoutRoutines.findFirst({
+      where: and(eq(workoutRoutines.id, id), eq(workoutRoutines.userId, userId)),
+      with: {
+        days: {
+          with: { exercises: true },
+          orderBy: [asc(workoutDays.sortOrder)]
+        }
       }
-    }
-  }).sync();
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get workout routine:', err);
+    return undefined;
+  }
 }
 
 export type WorkoutRoutineInput = {
@@ -160,44 +215,57 @@ export type WorkoutRoutineInput = {
 };
 
 export function createWorkoutRoutine(userId: string, data: WorkoutRoutineInput) {
-  const result = db.insert(workoutRoutines).values({
-    userId,
-    name: data.name,
-    description: data.description,
-    isActive: true
-  }).returning().all();
+  try {
+    const result = db.insert(workoutRoutines).values({
+      userId,
+      name: data.name,
+      description: data.description,
+      isActive: true
+    }).returning().all();
 
-  const routine = result[0];
+    const routine = result[0];
+    if (!routine) {
+      console.error('Failed to create workout routine: No result returned');
+      return null;
+    }
 
-  if (data.days && data.days.length > 0) {
-    for (const dayData of data.days) {
-      const dayResult = db.insert(workoutDays).values({
-        routineId: routine.id,
-        name: dayData.name,
-        dayOfWeek: dayData.dayOfWeek,
-        sortOrder: dayData.sortOrder ?? 0
-      }).returning().all();
+    if (data.days && data.days.length > 0) {
+      for (const dayData of data.days) {
+        const dayResult = db.insert(workoutDays).values({
+          routineId: routine.id,
+          name: dayData.name,
+          dayOfWeek: dayData.dayOfWeek,
+          sortOrder: dayData.sortOrder ?? 0
+        }).returning().all();
 
-      const day = dayResult[0];
+        const day = dayResult[0];
+        if (!day) {
+          console.error('Failed to create workout day: No result returned');
+          continue;
+        }
 
-      if (dayData.exercises && dayData.exercises.length > 0) {
-        db.insert(exercises).values(
-          dayData.exercises.map(ex => ({
-            workoutDayId: day.id,
-            name: ex.name,
-            targetSets: ex.targetSets,
-            targetReps: ex.targetReps,
-            targetWeight: ex.targetWeight,
-            restSeconds: ex.restSeconds,
-            notes: ex.notes,
-            sortOrder: ex.sortOrder ?? 0
-          }))
-        ).run();
+        if (dayData.exercises && dayData.exercises.length > 0) {
+          db.insert(exercises).values(
+            dayData.exercises.map(ex => ({
+              workoutDayId: day.id,
+              name: ex.name,
+              targetSets: ex.targetSets,
+              targetReps: ex.targetReps,
+              targetWeight: ex.targetWeight,
+              restSeconds: ex.restSeconds,
+              notes: ex.notes,
+              sortOrder: ex.sortOrder ?? 0
+            }))
+          ).run();
+        }
       }
     }
-  }
 
-  return getWorkoutRoutine(userId, routine.id);
+    return getWorkoutRoutine(userId, routine.id);
+  } catch (err) {
+    console.error('Failed to create workout routine:', err);
+    return null;
+  }
 }
 
 export function updateWorkoutRoutine(userId: string, id: number, data: Partial<{
@@ -205,23 +273,33 @@ export function updateWorkoutRoutine(userId: string, id: number, data: Partial<{
   description: string;
   isActive: boolean;
 }>) {
-  const existing = getWorkoutRoutine(userId, id);
-  if (!existing) return null;
+  try {
+    const existing = getWorkoutRoutine(userId, id);
+    if (!existing) return null;
 
-  db.update(workoutRoutines)
-    .set({ ...data, updatedAt: new Date().toISOString() })
-    .where(eq(workoutRoutines.id, id))
-    .run();
+    db.update(workoutRoutines)
+      .set({ ...data, updatedAt: new Date().toISOString() })
+      .where(eq(workoutRoutines.id, id))
+      .run();
 
-  return getWorkoutRoutine(userId, id);
+    return getWorkoutRoutine(userId, id);
+  } catch (err) {
+    console.error('Failed to update workout routine:', err);
+    return null;
+  }
 }
 
 export function deleteWorkoutRoutine(userId: string, id: number) {
-  const existing = getWorkoutRoutine(userId, id);
-  if (!existing) return false;
+  try {
+    const existing = getWorkoutRoutine(userId, id);
+    if (!existing) return false;
 
-  db.delete(workoutRoutines).where(eq(workoutRoutines.id, id)).run();
-  return true;
+    db.delete(workoutRoutines).where(eq(workoutRoutines.id, id)).run();
+    return true;
+  } catch (err) {
+    console.error('Failed to delete workout routine:', err);
+    return false;
+  }
 }
 
 // Workout Day operations
@@ -239,37 +317,46 @@ export function createWorkoutDay(userId: string, routineId: number, data: {
     sortOrder?: number;
   }>;
 }) {
-  const routine = getWorkoutRoutine(userId, routineId);
-  if (!routine) return null;
+  try {
+    const routine = getWorkoutRoutine(userId, routineId);
+    if (!routine) return null;
 
-  const dayResult = db.insert(workoutDays).values({
-    routineId,
-    name: data.name,
-    dayOfWeek: data.dayOfWeek,
-    sortOrder: data.sortOrder ?? 0
-  }).returning().all();
+    const dayResult = db.insert(workoutDays).values({
+      routineId,
+      name: data.name,
+      dayOfWeek: data.dayOfWeek,
+      sortOrder: data.sortOrder ?? 0
+    }).returning().all();
 
-  const day = dayResult[0];
+    const day = dayResult[0];
+    if (!day) {
+      console.error('Failed to create workout day: No result returned');
+      return null;
+    }
 
-  if (data.exercises && data.exercises.length > 0) {
-    db.insert(exercises).values(
-      data.exercises.map(ex => ({
-        workoutDayId: day.id,
-        name: ex.name,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetWeight: ex.targetWeight,
-        restSeconds: ex.restSeconds,
-        notes: ex.notes,
-        sortOrder: ex.sortOrder ?? 0
-      }))
-    ).run();
+    if (data.exercises && data.exercises.length > 0) {
+      db.insert(exercises).values(
+        data.exercises.map(ex => ({
+          workoutDayId: day.id,
+          name: ex.name,
+          targetSets: ex.targetSets,
+          targetReps: ex.targetReps,
+          targetWeight: ex.targetWeight,
+          restSeconds: ex.restSeconds,
+          notes: ex.notes,
+          sortOrder: ex.sortOrder ?? 0
+        }))
+      ).run();
+    }
+
+    return db.query.workoutDays.findFirst({
+      where: eq(workoutDays.id, day.id),
+      with: { exercises: true }
+    }).sync();
+  } catch (err) {
+    console.error('Failed to create workout day:', err);
+    return null;
   }
-
-  return db.query.workoutDays.findFirst({
-    where: eq(workoutDays.id, day.id),
-    with: { exercises: true }
-  }).sync();
 }
 
 export function updateWorkoutDay(userId: string, dayId: number, data: Partial<{
@@ -277,24 +364,34 @@ export function updateWorkoutDay(userId: string, dayId: number, data: Partial<{
   dayOfWeek: number | null;
   sortOrder: number;
 }>) {
-  // Verify ownership
-  const workout = getWorkout(userId, dayId);
-  if (!workout) return null;
+  try {
+    // Verify ownership
+    const workout = getWorkout(userId, dayId);
+    if (!workout) return null;
 
-  db.update(workoutDays).set(data).where(eq(workoutDays.id, dayId)).run();
+    db.update(workoutDays).set(data).where(eq(workoutDays.id, dayId)).run();
 
-  return db.query.workoutDays.findFirst({
-    where: eq(workoutDays.id, dayId),
-    with: { exercises: true }
-  }).sync();
+    return db.query.workoutDays.findFirst({
+      where: eq(workoutDays.id, dayId),
+      with: { exercises: true }
+    }).sync();
+  } catch (err) {
+    console.error('Failed to update workout day:', err);
+    return null;
+  }
 }
 
 export function deleteWorkoutDay(userId: string, dayId: number) {
-  const workout = getWorkout(userId, dayId);
-  if (!workout) return false;
+  try {
+    const workout = getWorkout(userId, dayId);
+    if (!workout) return false;
 
-  db.delete(workoutDays).where(eq(workoutDays.id, dayId)).run();
-  return true;
+    db.delete(workoutDays).where(eq(workoutDays.id, dayId)).run();
+    return true;
+  } catch (err) {
+    console.error('Failed to delete workout day:', err);
+    return false;
+  }
 }
 
 // Exercise operations
@@ -307,16 +404,21 @@ export function createExercise(userId: string, dayId: number, data: {
   notes?: string;
   sortOrder?: number;
 }) {
-  const workout = getWorkout(userId, dayId);
-  if (!workout) return null;
+  try {
+    const workout = getWorkout(userId, dayId);
+    if (!workout) return null;
 
-  const result = db.insert(exercises).values({
-    workoutDayId: dayId,
-    ...data,
-    sortOrder: data.sortOrder ?? 0
-  }).returning().all();
+    const result = db.insert(exercises).values({
+      workoutDayId: dayId,
+      ...data,
+      sortOrder: data.sortOrder ?? 0
+    }).returning().all();
 
-  return result[0];
+    return result[0] ?? null;
+  } catch (err) {
+    console.error('Failed to create exercise:', err);
+    return null;
+  }
 }
 
 export function updateExercise(userId: string, exerciseId: number, data: Partial<{
@@ -328,34 +430,44 @@ export function updateExercise(userId: string, exerciseId: number, data: Partial
   notes: string;
   sortOrder: number;
 }>) {
-  // Get exercise and verify ownership through workout
-  const exercise = db.query.exercises.findFirst({
-    where: eq(exercises.id, exerciseId),
-    with: { workoutDay: true }
-  }).sync();
+  try {
+    // Get exercise and verify ownership through workout
+    const exercise = db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId),
+      with: { workoutDay: true }
+    }).sync();
 
-  if (!exercise) return null;
+    if (!exercise) return null;
 
-  const workout = getWorkout(userId, exercise.workoutDayId);
-  if (!workout) return null;
+    const workout = getWorkout(userId, exercise.workoutDayId);
+    if (!workout) return null;
 
-  db.update(exercises).set(data).where(eq(exercises.id, exerciseId)).run();
+    db.update(exercises).set(data).where(eq(exercises.id, exerciseId)).run();
 
-  return db.query.exercises.findFirst({
-    where: eq(exercises.id, exerciseId)
-  }).sync();
+    return db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId)
+    }).sync();
+  } catch (err) {
+    console.error('Failed to update exercise:', err);
+    return null;
+  }
 }
 
 export function deleteExercise(userId: string, exerciseId: number) {
-  const exercise = db.query.exercises.findFirst({
-    where: eq(exercises.id, exerciseId)
-  }).sync();
+  try {
+    const exercise = db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId)
+    }).sync();
 
-  if (!exercise) return false;
+    if (!exercise) return false;
 
-  const workout = getWorkout(userId, exercise.workoutDayId);
-  if (!workout) return false;
+    const workout = getWorkout(userId, exercise.workoutDayId);
+    if (!workout) return false;
 
-  db.delete(exercises).where(eq(exercises.id, exerciseId)).run();
-  return true;
+    db.delete(exercises).where(eq(exercises.id, exerciseId)).run();
+    return true;
+  } catch (err) {
+    console.error('Failed to delete exercise:', err);
+    return false;
+  }
 }
