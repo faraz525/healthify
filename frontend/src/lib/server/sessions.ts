@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db, sqlite } from './db';
 import { workoutSessions, exerciseLogs, exercises, workoutDays, workoutRoutines } from './db/schema';
 import { eq, and, desc, or } from 'drizzle-orm';
 import { getEntryByDate, createEntry, updateEntry } from './entries';
@@ -102,23 +102,29 @@ export function getSession(userId: string, sessionId: number) {
 }
 
 // Start a new workout session for a workout day
+// Uses a transaction to prevent race conditions when checking for existing active sessions
 export function startSession(userId: string, workoutDayId: number): WorkoutSession | null {
   // Verify ownership
   if (!verifyWorkoutOwnership(userId, workoutDayId)) return null;
 
-  // Check if there's already an active session for this user
-  const existing = getActiveSession(userId);
-  if (existing) {
-    return null; // Can't start a new session while one is active
-  }
+  // Use a transaction to atomically check for existing session and create new one
+  const startSessionTx = sqlite.transaction(() => {
+    // Check if there's already an active session for this user
+    const existing = getActiveSession(userId);
+    if (existing) {
+      return null; // Can't start a new session while one is active
+    }
 
-  const result = db.insert(workoutSessions).values({
-    workoutDayId,
-    status: 'active',
-    startedAt: new Date().toISOString()
-  }).returning().all();
+    const result = db.insert(workoutSessions).values({
+      workoutDayId,
+      status: 'active',
+      startedAt: new Date().toISOString()
+    }).returning().all();
 
-  return result[0];
+    return result[0];
+  });
+
+  return startSessionTx();
 }
 
 // Parse weight string to numeric value for comparison

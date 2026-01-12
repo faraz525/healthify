@@ -8,6 +8,9 @@ const DATABASE_URL = env.DATABASE_URL || './data/healthify.db';
 const sqlite = new Database(DATABASE_URL);
 export const db = drizzle(sqlite, { schema });
 
+// Export sqlite instance for transaction support
+export { sqlite };
+
 // Seed default issue types if none exist
 export function seedDefaultIssueTypes() {
   const existing = sqlite.prepare('SELECT COUNT(*) as count FROM issue_types').get() as { count: number };

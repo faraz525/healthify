@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db, sqlite } from './db';
 import { workoutRoutines, workoutDays, exercises } from './db/schema';
 import { eq, asc, and, or, isNull } from 'drizzle-orm';
 
@@ -62,32 +62,38 @@ export type WorkoutInput = {
   }>;
 };
 
+// Uses a transaction to ensure atomic creation of workout and exercises
 export function createWorkout(userId: string, data: WorkoutInput) {
-  const result = db.insert(workoutDays).values({
-    userId,
-    name: data.name,
-    dayOfWeek: data.dayOfWeek,
-    sortOrder: data.sortOrder ?? 0
-  }).returning().all();
+  const createWorkoutTx = sqlite.transaction(() => {
+    const result = db.insert(workoutDays).values({
+      userId,
+      name: data.name,
+      dayOfWeek: data.dayOfWeek,
+      sortOrder: data.sortOrder ?? 0
+    }).returning().all();
 
-  const workout = result[0];
+    const workout = result[0];
 
-  if (data.exercises && data.exercises.length > 0) {
-    db.insert(exercises).values(
-      data.exercises.map(ex => ({
-        workoutDayId: workout.id,
-        name: ex.name,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetWeight: ex.targetWeight,
-        restSeconds: ex.restSeconds,
-        notes: ex.notes,
-        sortOrder: ex.sortOrder ?? 0
-      }))
-    ).run();
-  }
+    if (data.exercises && data.exercises.length > 0) {
+      db.insert(exercises).values(
+        data.exercises.map(ex => ({
+          workoutDayId: workout.id,
+          name: ex.name,
+          targetSets: ex.targetSets,
+          targetReps: ex.targetReps,
+          targetWeight: ex.targetWeight,
+          restSeconds: ex.restSeconds,
+          notes: ex.notes,
+          sortOrder: ex.sortOrder ?? 0
+        }))
+      ).run();
+    }
 
-  return getWorkout(userId, workout.id);
+    return workout.id;
+  });
+
+  const workoutId = createWorkoutTx();
+  return getWorkout(userId, workoutId);
 }
 
 export function updateWorkout(userId: string, id: number, data: Partial<{
@@ -159,45 +165,51 @@ export type WorkoutRoutineInput = {
   }>;
 };
 
+// Uses a transaction to ensure atomic creation of routine, days, and exercises
 export function createWorkoutRoutine(userId: string, data: WorkoutRoutineInput) {
-  const result = db.insert(workoutRoutines).values({
-    userId,
-    name: data.name,
-    description: data.description,
-    isActive: true
-  }).returning().all();
+  const createRoutineTx = sqlite.transaction(() => {
+    const result = db.insert(workoutRoutines).values({
+      userId,
+      name: data.name,
+      description: data.description,
+      isActive: true
+    }).returning().all();
 
-  const routine = result[0];
+    const routine = result[0];
 
-  if (data.days && data.days.length > 0) {
-    for (const dayData of data.days) {
-      const dayResult = db.insert(workoutDays).values({
-        routineId: routine.id,
-        name: dayData.name,
-        dayOfWeek: dayData.dayOfWeek,
-        sortOrder: dayData.sortOrder ?? 0
-      }).returning().all();
+    if (data.days && data.days.length > 0) {
+      for (const dayData of data.days) {
+        const dayResult = db.insert(workoutDays).values({
+          routineId: routine.id,
+          name: dayData.name,
+          dayOfWeek: dayData.dayOfWeek,
+          sortOrder: dayData.sortOrder ?? 0
+        }).returning().all();
 
-      const day = dayResult[0];
+        const day = dayResult[0];
 
-      if (dayData.exercises && dayData.exercises.length > 0) {
-        db.insert(exercises).values(
-          dayData.exercises.map(ex => ({
-            workoutDayId: day.id,
-            name: ex.name,
-            targetSets: ex.targetSets,
-            targetReps: ex.targetReps,
-            targetWeight: ex.targetWeight,
-            restSeconds: ex.restSeconds,
-            notes: ex.notes,
-            sortOrder: ex.sortOrder ?? 0
-          }))
-        ).run();
+        if (dayData.exercises && dayData.exercises.length > 0) {
+          db.insert(exercises).values(
+            dayData.exercises.map(ex => ({
+              workoutDayId: day.id,
+              name: ex.name,
+              targetSets: ex.targetSets,
+              targetReps: ex.targetReps,
+              targetWeight: ex.targetWeight,
+              restSeconds: ex.restSeconds,
+              notes: ex.notes,
+              sortOrder: ex.sortOrder ?? 0
+            }))
+          ).run();
+        }
       }
     }
-  }
 
-  return getWorkoutRoutine(userId, routine.id);
+    return routine.id;
+  });
+
+  const routineId = createRoutineTx();
+  return getWorkoutRoutine(userId, routineId);
 }
 
 export function updateWorkoutRoutine(userId: string, id: number, data: Partial<{
@@ -225,6 +237,7 @@ export function deleteWorkoutRoutine(userId: string, id: number) {
 }
 
 // Workout Day operations
+// Uses a transaction to ensure atomic creation of workout day and exercises
 export function createWorkoutDay(userId: string, routineId: number, data: {
   name: string;
   dayOfWeek?: number | null;
@@ -242,32 +255,37 @@ export function createWorkoutDay(userId: string, routineId: number, data: {
   const routine = getWorkoutRoutine(userId, routineId);
   if (!routine) return null;
 
-  const dayResult = db.insert(workoutDays).values({
-    routineId,
-    name: data.name,
-    dayOfWeek: data.dayOfWeek,
-    sortOrder: data.sortOrder ?? 0
-  }).returning().all();
+  const createDayTx = sqlite.transaction(() => {
+    const dayResult = db.insert(workoutDays).values({
+      routineId,
+      name: data.name,
+      dayOfWeek: data.dayOfWeek,
+      sortOrder: data.sortOrder ?? 0
+    }).returning().all();
 
-  const day = dayResult[0];
+    const day = dayResult[0];
 
-  if (data.exercises && data.exercises.length > 0) {
-    db.insert(exercises).values(
-      data.exercises.map(ex => ({
-        workoutDayId: day.id,
-        name: ex.name,
-        targetSets: ex.targetSets,
-        targetReps: ex.targetReps,
-        targetWeight: ex.targetWeight,
-        restSeconds: ex.restSeconds,
-        notes: ex.notes,
-        sortOrder: ex.sortOrder ?? 0
-      }))
-    ).run();
-  }
+    if (data.exercises && data.exercises.length > 0) {
+      db.insert(exercises).values(
+        data.exercises.map(ex => ({
+          workoutDayId: day.id,
+          name: ex.name,
+          targetSets: ex.targetSets,
+          targetReps: ex.targetReps,
+          targetWeight: ex.targetWeight,
+          restSeconds: ex.restSeconds,
+          notes: ex.notes,
+          sortOrder: ex.sortOrder ?? 0
+        }))
+      ).run();
+    }
 
+    return day.id;
+  });
+
+  const dayId = createDayTx();
   return db.query.workoutDays.findFirst({
-    where: eq(workoutDays.id, day.id),
+    where: eq(workoutDays.id, dayId),
     with: { exercises: true }
   }).sync();
 }
