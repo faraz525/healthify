@@ -36,174 +36,56 @@
   const recoveryTypes = workoutTypes.filter(t => t.category === 'recovery');
 </script>
 
-<div class="workout-type-selector">
+<div class="flex flex-col gap-4">
   {#if routineDays.length > 0}
-    <div class="type-section">
-      <span class="section-label">My Routines</span>
-      <div class="type-grid routine-grid">
+    <div class="flex flex-col gap-2">
+      <span class="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider">My Routines</span>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2 max-sm:grid-cols-2">
         {#each routineDays as day}
           <button
-            class="type-btn routine"
-            class:selected={isSelected(day.name)}
+            class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-(--color-bg) border-2 border-(--color-border) transition-all duration-150 min-h-11 hover:border-(--color-primary) hover:bg-(--color-primary)/5 max-sm:min-h-11 max-sm:p-1
+              {isSelected(day.name) ? 'border-(--color-primary) bg-(--color-primary)/10' : ''}"
             onclick={() => selectType(day.name)}
             type="button"
           >
-            <span class="type-label">{day.name}</span>
+            <span class="text-xs font-medium text-(--color-text-muted) text-center leading-tight {isSelected(day.name) ? 'text-(--color-text) font-semibold' : ''} max-sm:text-[0.65rem]">{day.name}</span>
           </button>
         {/each}
       </div>
     </div>
   {/if}
 
-  <div class="type-section">
-    <span class="section-label">Cardio</span>
-    <div class="type-grid">
+  <div class="flex flex-col gap-2">
+    <span class="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider">Cardio</span>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2 max-sm:grid-cols-3">
       {#each cardioTypes as type}
         <button
-          class="type-btn cardio"
-          class:selected={isSelected(type.id)}
+          class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-(--color-bg) border-2 border-(--color-border) transition-all duration-150 min-h-[50px] hover:border-(--color-danger) hover:bg-[rgba(212,114,106,0.1)] max-sm:min-h-11 max-sm:p-1
+            {isSelected(type.id) ? 'border-(--color-danger) bg-[rgba(212,114,106,0.1)]' : ''}"
           onclick={() => selectType(type.id)}
           type="button"
         >
-          <span class="type-emoji">{type.emoji}</span>
-          <span class="type-label">{type.label}</span>
+          <span class="text-xl max-sm:text-base">{type.emoji}</span>
+          <span class="text-xs font-medium text-(--color-text-muted) text-center leading-tight {isSelected(type.id) ? 'text-(--color-text) font-semibold' : ''} max-sm:text-[0.65rem]">{type.label}</span>
         </button>
       {/each}
     </div>
   </div>
 
-  <div class="type-section">
-    <span class="section-label">Flexibility & Recovery</span>
-    <div class="type-grid">
+  <div class="flex flex-col gap-2">
+    <span class="text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider">Flexibility & Recovery</span>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2 max-sm:grid-cols-3">
       {#each [...flexibilityTypes, ...recoveryTypes] as type}
         <button
-          class="type-btn flex"
-          class:selected={isSelected(type.id)}
+          class="flex flex-col items-center justify-center gap-1 p-2 rounded-xl bg-(--color-bg) border-2 border-(--color-border) transition-all duration-150 min-h-[50px] hover:border-(--color-success) hover:bg-[rgba(124,174,122,0.1)] max-sm:min-h-11 max-sm:p-1
+            {isSelected(type.id) ? 'border-(--color-success) bg-[rgba(124,174,122,0.1)]' : ''}"
           onclick={() => selectType(type.id)}
           type="button"
         >
-          <span class="type-emoji">{type.emoji}</span>
-          <span class="type-label">{type.label}</span>
+          <span class="text-xl max-sm:text-base">{type.emoji}</span>
+          <span class="text-xs font-medium text-(--color-text-muted) text-center leading-tight {isSelected(type.id) ? 'text-(--color-text) font-semibold' : ''} max-sm:text-[0.65rem]">{type.label}</span>
         </button>
       {/each}
     </div>
   </div>
 </div>
-
-<style>
-  .workout-type-selector {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-
-  .type-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-  }
-
-  .section-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .type-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: var(--space-sm);
-  }
-
-  .routine-grid {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  }
-
-  .type-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-xs);
-    padding: var(--space-sm);
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-    border: 2px solid var(--color-border);
-    transition: all var(--transition-fast);
-    min-height: 50px;
-  }
-
-  .type-btn:hover {
-    border-color: var(--color-primary);
-    background: rgba(var(--color-primary-rgb), 0.05);
-  }
-
-  .type-btn.selected {
-    border-color: var(--color-primary);
-    background: rgba(var(--color-primary-rgb), 0.1);
-  }
-
-  .type-btn.routine {
-    min-height: 44px;
-  }
-
-  .type-btn.routine:hover,
-  .type-btn.routine.selected {
-    border-color: var(--color-primary);
-    background: rgba(var(--color-primary-rgb), 0.1);
-  }
-
-  .type-btn.cardio:hover,
-  .type-btn.cardio.selected {
-    border-color: var(--color-danger);
-    background: rgba(212, 114, 106, 0.1);
-  }
-
-  .type-btn.flex:hover,
-  .type-btn.flex.selected {
-    border-color: var(--color-success);
-    background: rgba(124, 174, 122, 0.1);
-  }
-
-  .type-emoji {
-    font-size: 1.25rem;
-  }
-
-  .type-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    text-align: center;
-    line-height: 1.2;
-  }
-
-  .type-btn.selected .type-label {
-    color: var(--color-text);
-    font-weight: 600;
-  }
-
-  @media (max-width: 480px) {
-    .type-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
-    .routine-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    .type-btn {
-      min-height: 44px;
-      padding: var(--space-xs);
-    }
-
-    .type-emoji {
-      font-size: 1rem;
-    }
-
-    .type-label {
-      font-size: 0.65rem;
-    }
-  }
-</style>

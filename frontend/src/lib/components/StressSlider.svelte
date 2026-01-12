@@ -32,8 +32,8 @@
   let gradientPercent = $derived(((displayValue - 1) / 9) * 100);
 </script>
 
-<div class="stress-slider">
-  <div class="slider-container">
+<div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-1">
     <input
       type="range"
       min="1"
@@ -41,47 +41,31 @@
       step="1"
       value={displayValue}
       oninput={handleInput}
-      class="stress-range"
-      class:unset={value === null}
-      style="--progress: {gradientPercent}%; --thumb-color: {getColor(displayValue)}"
+      class="stress-range w-full h-3 rounded-full outline-none cursor-pointer max-sm:h-4 {value === null ? 'opacity-50' : ''}"
+      style="--thumb-color: {getColor(displayValue)}"
       aria-label="Stress level from 1 to 10"
     />
-    <div class="range-labels">
+    <div class="flex justify-between px-2 text-xs text-(--color-text-muted)">
       <span>1</span>
       <span>5</span>
       <span>10</span>
     </div>
   </div>
 
-  <div class="value-display">
+  <div class="flex items-center justify-center gap-2">
     {#if value !== null}
-      <span class="value-number" style="color: {getColor(value)}">{value}</span>
+      <span class="font-(family-name:--font-display) text-2xl font-bold leading-none" style="color: {getColor(value)}">{value}</span>
     {/if}
-    <span class="label-text" style="color: {value ? getColor(value) : 'var(--color-text-muted)'}">
+    <span class="text-sm font-medium transition-colors duration-150" style="color: {value ? getColor(value) : 'var(--color-text-muted)'}">
       {getLabel(value)}
     </span>
   </div>
 </div>
 
 <style>
-  .stress-slider {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-
-  .slider-container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-  }
-
   .stress-range {
     -webkit-appearance: none;
     appearance: none;
-    width: 100%;
-    height: 12px;
-    border-radius: var(--radius-full);
     background: linear-gradient(
       to right,
       var(--color-success) 0%,
@@ -91,12 +75,6 @@
       var(--color-danger) 66%,
       var(--color-danger) 100%
     );
-    outline: none;
-    cursor: pointer;
-  }
-
-  .stress-range.unset {
-    opacity: 0.5;
   }
 
   /* Webkit (Chrome, Safari, Edge) */
@@ -110,7 +88,7 @@
     border: 4px solid var(--thumb-color, var(--color-primary));
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     cursor: grab;
-    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+    transition: transform 0.15s, box-shadow 0.15s;
   }
 
   .stress-range::-webkit-slider-thumb:hover {
@@ -140,44 +118,12 @@
 
   .stress-range::-moz-range-track {
     height: 12px;
-    border-radius: var(--radius-full);
+    border-radius: 9999px;
     background: transparent;
-  }
-
-  .range-labels {
-    display: flex;
-    justify-content: space-between;
-    padding: 0 var(--space-sm);
-    font-size: 0.75rem;
-    color: var(--color-text-muted);
-  }
-
-  .value-display {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-  }
-
-  .value-number {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .label-text {
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: color var(--transition-fast);
   }
 
   /* Mobile optimizations */
   @media (max-width: 480px) {
-    .stress-range {
-      height: 16px;
-    }
-
     .stress-range::-webkit-slider-thumb {
       width: 48px;
       height: 48px;

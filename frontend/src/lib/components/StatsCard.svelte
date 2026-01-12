@@ -8,77 +8,27 @@
 
   let { label, value, icon = '', color = 'primary' }: Props = $props();
 
-  // Map icon names to emoji
   const iconMap: Record<string, string> = {
     calendar: '📅',
     fire: '🔥',
     dumbbell: '💪',
     heart: '❤️'
   };
+
+  const bgColorMap: Record<string, string> = {
+    primary: 'bg-(--color-primary)/10',
+    success: 'bg-(--color-success-light)',
+    warning: 'bg-(--color-warning-light)',
+    danger: 'bg-(--color-danger-light)'
+  };
 </script>
 
-<div class="stats-card stats-{color}">
+<div class="card flex items-center gap-4 p-6">
   {#if icon}
-    <span class="stats-icon">{iconMap[icon] || icon}</span>
+    <span class="text-3xl w-14 h-14 flex items-center justify-center rounded-xl {bgColorMap[color]}">{iconMap[icon] || icon}</span>
   {/if}
-  <div class="stats-content">
-    <span class="stats-value">{value}</span>
-    <span class="stats-label">{label}</span>
+  <div class="flex flex-col gap-1 min-w-0 overflow-hidden">
+    <span class="font-(family-name:--font-display) text-3xl font-semibold text-(--color-text) leading-none overflow-hidden text-ellipsis whitespace-nowrap">{value}</span>
+    <span class="text-sm text-(--color-text-muted) overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
   </div>
 </div>
-
-<style>
-  .stats-card {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-lg);
-    background: var(--color-bg-card);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border-light);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .stats-icon {
-    font-size: 2rem;
-    width: 56px;
-    height: 56px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-  }
-
-  .stats-primary .stats-icon { background: rgba(var(--color-primary-rgb), 0.1); }
-  .stats-success .stats-icon { background: var(--color-success-light); }
-  .stats-warning .stats-icon { background: var(--color-warning-light); }
-  .stats-danger .stats-icon { background: var(--color-danger-light); }
-
-  .stats-content {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .stats-value {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
-    font-weight: 600;
-    color: var(--color-text);
-    line-height: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .stats-label {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-</style>

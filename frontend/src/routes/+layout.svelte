@@ -33,24 +33,33 @@
   <meta name="description" content="Personal health tracker" />
 </svelte:head>
 
-<div class="app">
-  <header class="app-header">
-    <div class="container header-content">
-      <a href="/" class="logo">
-        <span class="logo-icon">🌿</span>
-        <span class="logo-text">Healthify</span>
+<div class="min-h-screen flex flex-col overflow-x-hidden">
+  <header class="bg-(--color-bg-card) border-b border-(--color-border-light) sticky top-0 z-50">
+    <div class="container flex items-center justify-between h-18 max-sm:h-15">
+      <a href="/" class="flex items-center gap-2 no-underline">
+        <span class="text-3xl max-sm:text-2xl">🌿</span>
+        <span class="font-(family-name:--font-display) text-2xl max-sm:text-xl font-semibold text-(--color-text)">Healthify</span>
       </a>
 
       <!-- Desktop Navigation -->
-      <nav class="nav desktop-nav">
-        <a href="/" class="nav-link" class:active={$page.url.pathname === '/'}>Calendar</a>
-        <a href="/workouts" class="nav-link" class:active={$page.url.pathname === '/workouts'}>Workouts</a>
-        <a href="/stats" class="nav-link" class:active={$page.url.pathname === '/stats'}>Stats</a>
+      <nav class="hidden sm:flex items-center gap-4">
+        <a
+          href="/"
+          class="px-4 py-2 font-medium text-(--color-text-muted) rounded-lg transition-all duration-150 hover:text-(--color-text) hover:bg-(--color-bg-hover) {$page.url.pathname === '/' ? 'text-(--color-primary)!' : ''}"
+        >Workouts</a>
+        <a
+          href="/calendar"
+          class="px-4 py-2 font-medium text-(--color-text-muted) rounded-lg transition-all duration-150 hover:text-(--color-text) hover:bg-(--color-bg-hover) {$page.url.pathname === '/calendar' ? 'text-(--color-primary)!' : ''}"
+        >Calendar</a>
+        <a
+          href="/stats"
+          class="px-4 py-2 font-medium text-(--color-text-muted) rounded-lg transition-all duration-150 hover:text-(--color-text) hover:bg-(--color-bg-hover) {$page.url.pathname === '/stats' ? 'text-(--color-primary)!' : ''}"
+        >Stats</a>
         {#if data.user}
-          <div class="user-menu">
-            <span class="user-email">{data.user.email.split('@')[0]}</span>
+          <div class="flex items-center gap-4 ml-6 pl-6 border-l border-(--color-border-light)">
+            <span class="text-sm text-(--color-text-muted)">{data.user.email.split('@')[0]}</span>
             <form action="/logout" method="POST" use:enhance>
-              <button type="submit" class="logout-btn">Logout</button>
+              <button type="submit" class="px-4 py-1 text-sm font-medium text-(--color-text-muted) bg-transparent border border-(--color-border) rounded-lg cursor-pointer transition-all duration-150 hover:text-(--color-text) hover:border-(--color-text-muted)">Logout</button>
             </form>
           </div>
         {/if}
@@ -58,28 +67,28 @@
 
       <!-- Mobile Hamburger Button -->
       <button
-        class="hamburger-btn"
+        class="flex sm:hidden flex-col justify-center gap-[5px] w-11 h-11 p-2.5 bg-transparent border-none cursor-pointer"
         onclick={toggleMenu}
         aria-label="Toggle menu"
         aria-expanded={mobileMenuOpen}
       >
-        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
-        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
-        <span class="hamburger-line" class:open={mobileMenuOpen}></span>
+        <span class="w-6 h-0.5 bg-(--color-text) rounded-sm transition-all duration-150 {mobileMenuOpen ? 'rotate-45 translate-x-[5px] translate-y-[5px]' : ''}"></span>
+        <span class="w-6 h-0.5 bg-(--color-text) rounded-sm transition-all duration-150 {mobileMenuOpen ? 'opacity-0' : ''}"></span>
+        <span class="w-6 h-0.5 bg-(--color-text) rounded-sm transition-all duration-150 {mobileMenuOpen ? '-rotate-45 translate-x-[5px] -translate-y-[5px]' : ''}"></span>
       </button>
     </div>
 
     <!-- Mobile Navigation Menu -->
     {#if mobileMenuOpen}
-      <nav class="mobile-nav">
-        <a href="/" class="mobile-nav-link" onclick={closeMenu}>Calendar</a>
-        <a href="/workouts" class="mobile-nav-link" onclick={closeMenu}>Workouts</a>
-        <a href="/stats" class="mobile-nav-link" onclick={closeMenu}>Stats</a>
+      <nav class="flex sm:hidden flex-col px-6 pb-6 border-t border-(--color-border-light) bg-(--color-bg-card)">
+        <a href="/" class="py-4 px-2 font-medium text-(--color-text-muted) border-b border-(--color-border-light) transition-all duration-150 hover:text-(--color-primary)" onclick={closeMenu}>Workouts</a>
+        <a href="/calendar" class="py-4 px-2 font-medium text-(--color-text-muted) border-b border-(--color-border-light) transition-all duration-150 hover:text-(--color-primary)" onclick={closeMenu}>Calendar</a>
+        <a href="/stats" class="py-4 px-2 font-medium text-(--color-text-muted) transition-all duration-150 hover:text-(--color-primary)" onclick={closeMenu}>Stats</a>
         {#if data.user}
-          <div class="mobile-user-section">
-            <span class="mobile-user-email">{data.user.email}</span>
+          <div class="flex flex-col gap-2 py-4 px-2 mt-2 border-t border-(--color-border-light)">
+            <span class="text-sm text-(--color-text-muted)">{data.user.email}</span>
             <form action="/logout" method="POST" use:enhance>
-              <button type="submit" class="mobile-logout-btn" onclick={closeMenu}>Logout</button>
+              <button type="submit" class="w-full py-2 px-4 text-sm font-medium text-(--color-text) bg-(--color-bg-hover) border-none rounded-lg cursor-pointer text-center" onclick={closeMenu}>Logout</button>
             </form>
           </div>
         {/if}
@@ -87,11 +96,11 @@
     {/if}
   </header>
 
-  <main class="app-main">
+  <main class="flex-1 py-12 max-sm:py-6">
     {@render children()}
   </main>
 
-  <footer class="app-footer">
+  <footer class="py-8 text-center text-(--color-text-muted) text-sm">
     <div class="container">
       <p>Track your health, one day at a time.</p>
     </div>
@@ -107,228 +116,3 @@
 {#if !$modalOpen}
   <FloatingActionButton />
 {/if}
-
-<style>
-  .app {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden;
-  }
-
-  .app-header {
-    background: var(--color-bg-card);
-    border-bottom: 1px solid var(--color-border-light);
-    position: sticky;
-    top: 0;
-    z-index: 50;
-  }
-
-  .header-content {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 72px;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    text-decoration: none;
-  }
-
-  .logo-icon {
-    font-size: 1.75rem;
-  }
-
-  .logo-text {
-    font-family: var(--font-display);
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  /* Desktop Navigation */
-  .desktop-nav {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-  }
-
-  .nav-link {
-    padding: var(--space-sm) var(--space-md);
-    font-weight: 500;
-    color: var(--color-text-muted);
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .nav-link:hover {
-    color: var(--color-text);
-    background: var(--color-bg-hover);
-  }
-
-  .nav-link.active {
-    color: var(--color-primary);
-  }
-
-  .user-menu {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    margin-left: var(--space-lg);
-    padding-left: var(--space-lg);
-    border-left: 1px solid var(--color-border-light);
-  }
-
-  .user-email {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
-  }
-
-  .logout-btn {
-    padding: var(--space-xs) var(--space-md);
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    background: transparent;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .logout-btn:hover {
-    color: var(--color-text);
-    border-color: var(--color-text-muted);
-  }
-
-  /* Hamburger Button - Hidden on desktop */
-  .hamburger-btn {
-    display: none;
-    flex-direction: column;
-    justify-content: center;
-    gap: 5px;
-    width: 44px;
-    height: 44px;
-    padding: 10px;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-  }
-
-  .hamburger-line {
-    width: 24px;
-    height: 2px;
-    background: var(--color-text);
-    border-radius: 2px;
-    transition: all var(--transition-fast);
-  }
-
-  .hamburger-line.open:nth-child(1) {
-    transform: rotate(45deg) translate(5px, 5px);
-  }
-
-  .hamburger-line.open:nth-child(2) {
-    opacity: 0;
-  }
-
-  .hamburger-line.open:nth-child(3) {
-    transform: rotate(-45deg) translate(5px, -5px);
-  }
-
-  /* Mobile Navigation - Hidden by default */
-  .mobile-nav {
-    display: none;
-    flex-direction: column;
-    padding: 0 var(--space-lg) var(--space-lg);
-    border-top: 1px solid var(--color-border-light);
-    background: var(--color-bg-card);
-  }
-
-  .mobile-nav-link {
-    padding: var(--space-md) var(--space-sm);
-    font-weight: 500;
-    color: var(--color-text-muted);
-    border-bottom: 1px solid var(--color-border-light);
-    transition: all var(--transition-fast);
-  }
-
-  .mobile-nav-link:last-child {
-    border-bottom: none;
-  }
-
-  .mobile-nav-link:hover {
-    color: var(--color-primary);
-  }
-
-  .mobile-user-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-    padding: var(--space-md) var(--space-sm);
-    margin-top: var(--space-sm);
-    border-top: 1px solid var(--color-border-light);
-  }
-
-  .mobile-user-email {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
-  }
-
-  .mobile-logout-btn {
-    padding: var(--space-sm) var(--space-md);
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-text);
-    background: var(--color-bg-hover);
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    text-align: center;
-  }
-
-  .app-main {
-    flex: 1;
-    padding: var(--space-2xl) 0;
-  }
-
-  .app-footer {
-    padding: var(--space-xl) 0;
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-  }
-
-  /* Mobile Responsive */
-  @media (max-width: 600px) {
-    .header-content {
-      height: 60px;
-    }
-
-    .logo-icon {
-      font-size: 1.5rem;
-    }
-
-    .logo-text {
-      font-size: 1.25rem;
-    }
-
-    .desktop-nav {
-      display: none;
-    }
-
-    .hamburger-btn {
-      display: flex;
-    }
-
-    .mobile-nav {
-      display: flex;
-    }
-
-    .app-main {
-      padding: var(--space-lg) 0;
-    }
-  }
-</style>

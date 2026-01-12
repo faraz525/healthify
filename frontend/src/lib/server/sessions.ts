@@ -428,3 +428,30 @@ export function getExerciseLogsInSession(userId: string, sessionId: number, exer
     orderBy: [exerciseLogs.setNumber]
   }).sync();
 }
+
+// Get today's completed sessions for user
+export function getTodaysCompletedSessions(userId: string) {
+  const today = new Date().toISOString().split('T')[0];
+  const userWorkoutDayIds = getUserWorkoutDayIds(userId);
+
+  if (userWorkoutDayIds.length === 0) return [];
+
+  const sessions = db.query.workoutSessions.findMany({
+    where: and(
+      eq(workoutSessions.status, 'completed'),
+      or(...userWorkoutDayIds.map(id => eq(workoutSessions.workoutDayId, id)))
+    ),
+    with: {
+      workoutDay: {
+        with: { exercises: true }
+      },
+      exerciseLogs: {
+        with: { exercise: true }
+      }
+    },
+    orderBy: [desc(workoutSessions.completedAt)]
+  }).sync();
+
+  // Filter to only today's sessions
+  return sessions.filter(s => s.startedAt?.startsWith(today) || s.completedAt?.startsWith(today));
+}

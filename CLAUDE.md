@@ -24,11 +24,13 @@ docker compose up -d                                # Run on port 3000
 
 ## Architecture
 
-**Stack**: SvelteKit 2 + Svelte 5 + TypeScript + Drizzle ORM + better-sqlite3
+**Stack**: SvelteKit 2 + Svelte 5 + TypeScript + Tailwind CSS v4 + Drizzle ORM + better-sqlite3
 
 ```
 frontend/src/
 ├── routes/              # Pages with +page.svelte and +page.server.ts
+│   ├── +page.svelte     # Workouts (home page)
+│   └── calendar/        # Calendar view
 ├── lib/
 │   ├── server/          # Server-only code (DB, auth, business logic)
 │   │   ├── db/          # Drizzle schema and connection
@@ -37,8 +39,16 @@ frontend/src/
 │   │   ├── workouts.ts  # Workout CRUD
 │   │   └── sessions.ts  # Workout session tracking
 │   └── components/      # Reusable Svelte components
+├── app.css              # Tailwind imports + design tokens (@theme)
 └── hooks.server.ts      # Auth middleware (route protection)
 ```
+
+### Styling with Tailwind CSS v4
+- Uses `@import "tailwindcss"` and `@theme` block in `app.css`
+- Design tokens defined as CSS variables: `--color-primary`, `--color-bg`, etc.
+- Use arbitrary value syntax for custom properties: `bg-(--color-primary)`, `text-(--color-text-muted)`
+- Responsive prefixes: `sm:`, `max-sm:` for mobile-first design
+- Color opacity: `bg-(--color-primary)/10` for transparent backgrounds
 
 **Data Flow**: `+page.server.ts` → `lib/server/*.ts` → Drizzle ORM → SQLite
 

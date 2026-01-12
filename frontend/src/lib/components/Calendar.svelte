@@ -51,36 +51,36 @@
   }
 </script>
 
-<div class="calendar">
-  <header class="calendar-header">
-    <button class="nav-btn" onclick={prevMonth} aria-label="Previous month">
+<div class="bg-(--color-bg-card) rounded-3xl p-6 shadow-md border border-(--color-border-light) max-sm:p-4 max-sm:rounded-2xl">
+  <header class="flex items-center justify-between mb-6 max-sm:mb-4">
+    <button class="w-11 h-11 flex items-center justify-center rounded-full text-(--color-text-muted) transition-all duration-150 hover:bg-(--color-bg-hover) hover:text-(--color-text) max-sm:w-9 max-sm:h-9" onclick={prevMonth} aria-label="Previous month">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M15 18l-6-6 6-6"/>
       </svg>
     </button>
 
-    <div class="month-year">
-      <h2>{monthName} {year}</h2>
-      <button class="today-btn" onclick={goToToday}>Today</button>
+    <div class="flex items-center gap-4 max-sm:flex-col max-sm:gap-2">
+      <h2 class="text-[1.75rem] font-semibold text-(--color-text) m-0 max-sm:text-xl">{monthName} {year}</h2>
+      <button class="px-4 py-1 text-sm font-medium text-(--color-primary) bg-(--color-primary)/10 rounded-full transition-all duration-150 hover:bg-(--color-primary)/20 max-sm:px-3 max-sm:text-xs" onclick={goToToday}>Today</button>
     </div>
 
-    <button class="nav-btn" onclick={nextMonth} aria-label="Next month">
+    <button class="w-11 h-11 flex items-center justify-center rounded-full text-(--color-text-muted) transition-all duration-150 hover:bg-(--color-bg-hover) hover:text-(--color-text) max-sm:w-9 max-sm:h-9" onclick={nextMonth} aria-label="Next month">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M9 18l6-6-6-6"/>
       </svg>
     </button>
   </header>
 
-  <div class="weekdays">
+  <div class="grid grid-cols-7 gap-1 mb-2">
     {#each weekDays as day}
-      <div class="weekday">{day}</div>
+      <div class="text-center text-xs font-semibold text-(--color-text-muted) uppercase tracking-wider p-2 max-sm:text-[0.65rem] max-sm:p-1">{day}</div>
     {/each}
   </div>
 
-  <div class="days-grid">
+  <div class="grid grid-cols-7 gap-1 max-sm:gap-0.5">
     {#each calendarDays as day, i}
       {#if day === null}
-        <div class="day-cell empty"></div>
+        <div class="aspect-square"></div>
       {:else}
         {@const dateStr = formatDate(day)}
         {@const entry = $entriesByDate.get(dateStr)}
@@ -96,130 +96,3 @@
     {/each}
   </div>
 </div>
-
-<style>
-  .calendar {
-    background: var(--color-bg-card);
-    border-radius: var(--radius-xl);
-    padding: var(--space-xl);
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--color-border-light);
-  }
-
-  .calendar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-xl);
-  }
-
-  .month-year {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-  }
-
-  .month-year h2 {
-    font-size: 1.75rem;
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0;
-  }
-
-  .nav-btn {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-full);
-    color: var(--color-text-muted);
-    transition: all var(--transition-fast);
-  }
-
-  .nav-btn:hover {
-    background: var(--color-bg-hover);
-    color: var(--color-text);
-  }
-
-  .today-btn {
-    padding: var(--space-xs) var(--space-md);
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--color-primary);
-    background: rgba(var(--color-primary-rgb), 0.1);
-    border-radius: var(--radius-full);
-    transition: all var(--transition-fast);
-  }
-
-  .today-btn:hover {
-    background: rgba(var(--color-primary-rgb), 0.2);
-  }
-
-  .weekdays {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: var(--space-xs);
-    margin-bottom: var(--space-sm);
-  }
-
-  .weekday {
-    text-align: center;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: var(--space-sm);
-  }
-
-  .days-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: var(--space-xs);
-  }
-
-  .day-cell.empty {
-    aspect-ratio: 1;
-  }
-
-  /* Mobile responsiveness */
-  @media (max-width: 480px) {
-    .calendar {
-      padding: var(--space-md);
-      border-radius: var(--radius-lg);
-    }
-
-    .calendar-header {
-      margin-bottom: var(--space-md);
-    }
-
-    .month-year {
-      flex-direction: column;
-      gap: var(--space-sm);
-    }
-
-    .month-year h2 {
-      font-size: 1.25rem;
-    }
-
-    .nav-btn {
-      width: 36px;
-      height: 36px;
-    }
-
-    .today-btn {
-      padding: var(--space-xs) var(--space-sm);
-      font-size: 0.75rem;
-    }
-
-    .weekday {
-      font-size: 0.65rem;
-      padding: var(--space-xs);
-    }
-
-    .days-grid {
-      gap: 2px;
-    }
-  }
-</style>

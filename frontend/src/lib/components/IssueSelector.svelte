@@ -91,26 +91,26 @@
   }
 </script>
 
-<div class="issue-selector">
-  <div class="issue-grid">
+<div class="flex flex-col gap-4">
+  <div class="grid grid-cols-3 gap-2 max-sm:grid-cols-2 max-sm:gap-1">
     {#each issueTypes as type}
       <button
-        class="issue-btn"
-        class:selected={isSelected(type.name)}
+        class="flex flex-col items-center gap-1 p-4 rounded-xl bg-(--color-bg) border-2 border-(--color-border) transition-all duration-150 hover:border-(--color-warning) hover:bg-(--color-warning-light) max-sm:min-h-14 max-sm:p-2
+          {isSelected(type.name) ? 'border-(--color-warning) bg-(--color-warning-light)' : ''}"
         onclick={() => toggleIssue(type)}
       >
-        <span class="issue-icon">{getIcon(type.icon)}</span>
-        <span class="issue-name">{type.displayName}</span>
+        <span class="text-2xl max-sm:text-xl">{getIcon(type.icon)}</span>
+        <span class="text-xs font-medium text-(--color-text-muted) text-center {isSelected(type.name) ? 'text-(--color-text)' : ''} max-sm:text-[0.7rem]">{type.displayName}</span>
       </button>
     {/each}
   </div>
 
   {#if issues.length > 0}
-    <div class="selected-issues">
+    <div class="flex flex-wrap gap-2">
       {#each issues as issue, index}
-        <div class="issue-badge">
+        <div class="flex items-center gap-2 px-3 py-1 bg-(--color-warning-light) rounded-full text-sm text-(--color-text) capitalize">
           <span>{issue.notes || issue.issueType.replace(/_/g, ' ')}</span>
-          <button class="remove-btn" onclick={() => removeIssue(index)} aria-label="Remove">
+          <button class="flex items-center justify-center w-5 h-5 rounded-full text-(--color-text-muted) transition-all duration-150 hover:bg-(--color-danger-light) hover:text-(--color-danger) max-sm:w-7 max-sm:h-7" onclick={() => removeIssue(index)} aria-label="Remove">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 6L6 18M6 6l12 12"/>
             </svg>
@@ -121,20 +121,21 @@
   {/if}
 
   {#if showCustomInput}
-    <div class="custom-input animate-slide-up">
+    <div class="flex gap-2 animate-slide-up max-sm:flex-wrap">
       <input
         type="text"
         bind:value={customIssue}
         placeholder="Describe the issue..."
         onkeydown={handleCustomKeydown}
+        class="flex-1 px-4 py-2 border border-(--color-border) rounded-lg text-[0.95rem] focus:outline-none focus:border-(--color-primary) max-sm:w-full max-sm:min-h-11"
       />
-      <button class="btn btn-primary" onclick={addCustomIssue}>Add</button>
-      <button class="btn btn-secondary" onclick={() => { showCustomInput = false; customIssue = ''; }}>
+      <button class="btn btn-primary max-sm:flex-1 max-sm:min-h-11" onclick={addCustomIssue}>Add</button>
+      <button class="btn btn-secondary max-sm:flex-1 max-sm:min-h-11" onclick={() => { showCustomInput = false; customIssue = ''; }}>
         Cancel
       </button>
     </div>
   {:else}
-    <button class="add-custom-btn" onclick={() => showCustomInput = true}>
+    <button class="flex items-center gap-2 px-4 py-2 text-(--color-primary) font-medium rounded-lg transition-all duration-150 hover:bg-(--color-primary)/10 max-sm:min-h-11 max-sm:justify-center" onclick={() => showCustomInput = true}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 5v14M5 12h14"/>
       </svg>
@@ -142,166 +143,3 @@
     </button>
   {/if}
 </div>
-
-<style>
-  .issue-selector {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-
-  .issue-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--space-sm);
-  }
-
-  .issue-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-xs);
-    padding: var(--space-md);
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-    border: 2px solid var(--color-border);
-    transition: all var(--transition-fast);
-  }
-
-  .issue-btn:hover {
-    border-color: var(--color-warning);
-    background: var(--color-warning-light);
-  }
-
-  .issue-btn.selected {
-    border-color: var(--color-warning);
-    background: var(--color-warning-light);
-  }
-
-  .issue-icon {
-    font-size: 1.5rem;
-  }
-
-  .issue-name {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    text-align: center;
-  }
-
-  .issue-btn.selected .issue-name {
-    color: var(--color-text);
-  }
-
-  .selected-issues {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-  }
-
-  .issue-badge {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-xs) var(--space-sm);
-    background: var(--color-warning-light);
-    border-radius: var(--radius-full);
-    font-size: 0.875rem;
-    color: var(--color-text);
-    text-transform: capitalize;
-  }
-
-  .remove-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: var(--radius-full);
-    color: var(--color-text-muted);
-    transition: all var(--transition-fast);
-  }
-
-  .remove-btn:hover {
-    background: var(--color-danger-light);
-    color: var(--color-danger);
-  }
-
-  .custom-input {
-    display: flex;
-    gap: var(--space-sm);
-  }
-
-  .custom-input input {
-    flex: 1;
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    font-size: 0.95rem;
-  }
-
-  .custom-input input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-  }
-
-  .add-custom-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    color: var(--color-primary);
-    font-weight: 500;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .add-custom-btn:hover {
-    background: rgba(var(--color-primary-rgb), 0.1);
-  }
-
-  /* Mobile responsiveness - 2 column grid with larger touch targets */
-  @media (max-width: 480px) {
-    .issue-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: var(--space-xs);
-    }
-
-    .issue-btn {
-      min-height: 56px;
-      padding: var(--space-sm);
-    }
-
-    .issue-icon {
-      font-size: 1.25rem;
-    }
-
-    .issue-name {
-      font-size: 0.7rem;
-    }
-
-    .custom-input {
-      flex-wrap: wrap;
-    }
-
-    .custom-input input {
-      width: 100%;
-      min-height: 44px;
-    }
-
-    .custom-input .btn {
-      flex: 1;
-      min-height: 44px;
-    }
-
-    .add-custom-btn {
-      min-height: 44px;
-      justify-content: center;
-    }
-
-    .remove-btn {
-      width: 28px;
-      height: 28px;
-    }
-  }
-</style>

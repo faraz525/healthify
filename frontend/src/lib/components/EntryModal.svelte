@@ -37,6 +37,7 @@
   let notes = $state('');
   let healthIssues = $state<HealthIssue[]>([]);
   let saving = $state(false);
+  let healthDetailsExpanded = $state(false);
 
   // Get workout routines from page data
   let routineDays = $derived.by(() => {
@@ -61,6 +62,8 @@
           notes: i.notes,
           timeOfDay: i.timeOfDay
         }));
+        // Auto-expand health details if there's existing health data
+        healthDetailsExpanded = !!(stressLevel || notes || healthIssues.length > 0);
       } else {
         stressLevel = null;
         workedOut = false;
@@ -68,6 +71,7 @@
         workoutNotes = '';
         notes = '';
         healthIssues = [];
+        healthDetailsExpanded = false;
       }
     }
   });
@@ -146,65 +150,100 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-<div class="modal-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Entry form dialog">
-  <div class="modal animate-slide-up">
-    <header class="modal-header">
+<div class="fixed inset-0 bg-[rgba(61,54,48,0.5)] flex items-center justify-center p-6 z-100 backdrop-blur-sm" onclick={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Entry form dialog">
+  <div class="bg-(--color-bg-card) rounded-3xl w-full max-w-[560px] max-h-[90vh] flex flex-col shadow-lg animate-slide-up">
+    <header class="flex items-start justify-between p-6 border-b border-(--color-border-light)">
       <div>
-        <h2>{isEditing ? 'Edit Entry' : 'New Entry'}</h2>
-        <p class="date-display">{formatDisplayDate(date)}</p>
+        <h2 class="m-0 text-2xl font-(family-name:--font-display) font-semibold text-(--color-text)">{isEditing ? 'Edit Entry' : 'New Entry'}</h2>
+        <p class="text-(--color-text-muted) text-sm mt-1">{formatDisplayDate(date)}</p>
       </div>
-      <button class="close-btn" onclick={closeModal} aria-label="Close">
+      <button class="w-10 h-10 flex items-center justify-center rounded-full text-(--color-text-muted) transition-all duration-150 hover:bg-(--color-bg-hover) hover:text-(--color-text)" onclick={closeModal} aria-label="Close">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18 6L6 18M6 6l12 12"/>
         </svg>
       </button>
     </header>
 
-    <div class="modal-body">
-      <section class="form-section">
-        <h3>How stressed were you today?</h3>
-        <StressSlider bind:value={stressLevel} />
-      </section>
-
-      <section class="form-section">
-        <h3>Did you work out?</h3>
+    <div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+      <!-- Workout Section (Primary) -->
+      <section class="p-5 bg-(--color-primary)/5 rounded-2xl border border-(--color-primary)/15">
+        <h3 class="text-base font-semibold mb-4 text-(--color-primary)">Did you work out?</h3>
         <WorkoutToggle bind:checked={workedOut} />
         {#if workedOut}
-          <div class="workout-details animate-slide-up">
-            <h4>What type of workout?</h4>
+          <div class="mt-4 flex flex-col gap-4 animate-slide-up">
+            <h4 class="text-sm font-medium text-(--color-text-muted) m-0">What type of workout?</h4>
             <WorkoutTypeSelector bind:value={workoutType} {routineDays} />
             <textarea
               bind:value={workoutNotes}
               placeholder="Additional notes (optional)"
               rows="2"
+              class="w-full p-4 border border-(--color-border) rounded-xl resize-y text-[0.95rem] transition-colors duration-150 bg-(--color-bg) focus:outline-none focus:border-(--color-primary)"
             ></textarea>
           </div>
         {/if}
       </section>
 
-      <section class="form-section">
-        <h3>Any health issues?</h3>
-        <IssueSelector
-          bind:issues={healthIssues}
-          issueTypes={$issueTypes}
-        />
-      </section>
+      <!-- Collapsible Health Details Section -->
+      <section class="border border-(--color-border-light) rounded-2xl overflow-hidden">
+        <button
+          type="button"
+          class="w-full flex items-center justify-between px-5 py-4 bg-(--color-bg) border-none cursor-pointer transition-colors duration-150 hover:bg-(--color-bg-hover)"
+          onclick={() => healthDetailsExpanded = !healthDetailsExpanded}
+          aria-expanded={healthDetailsExpanded}
+        >
+          <span class="flex items-center gap-2 text-base font-semibold text-(--color-text)">
+            Health Details
+            {#if stressLevel || healthIssues.length > 0 || notes}
+              <span class="text-[0.7rem] font-medium px-2 py-0.5 bg-(--color-success-light) text-(--color-success) rounded-full uppercase tracking-wide">Has data</span>
+            {/if}
+          </span>
+          <svg
+            class="text-(--color-text-muted) transition-transform duration-150 {healthDetailsExpanded ? 'rotate-180' : ''}"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
 
-      <section class="form-section">
-        <h3>Notes</h3>
-        <textarea
-          bind:value={notes}
-          placeholder="Any other thoughts about your day..."
-          rows="3"
-        ></textarea>
+        {#if healthDetailsExpanded}
+          <div class="p-5 bg-(--color-bg-card) border-t border-(--color-border-light) flex flex-col gap-5 animate-slide-up">
+            <div>
+              <h4 class="text-sm font-semibold mb-4 text-(--color-text)">How stressed were you today?</h4>
+              <StressSlider bind:value={stressLevel} />
+            </div>
+
+            <div>
+              <h4 class="text-sm font-semibold mb-4 text-(--color-text)">Any health issues?</h4>
+              <IssueSelector
+                bind:issues={healthIssues}
+                issueTypes={$issueTypes}
+              />
+            </div>
+
+            <div>
+              <h4 class="text-sm font-semibold mb-4 text-(--color-text)">Notes</h4>
+              <textarea
+                bind:value={notes}
+                placeholder="Any other thoughts about your day..."
+                rows="3"
+                class="w-full p-4 border border-(--color-border) rounded-xl resize-y text-[0.95rem] transition-colors duration-150 bg-(--color-bg) focus:outline-none focus:border-(--color-primary)"
+              ></textarea>
+            </div>
+          </div>
+        {/if}
       </section>
     </div>
 
-    <footer class="modal-footer">
+    <footer class="flex items-center justify-between px-6 py-4 border-t border-(--color-border-light) gap-4">
       {#if isEditing}
         <form
           method="POST"
-          action="?/deleteEntry"
+          action="/calendar?/deleteEntry"
           use:enhance={({ cancel }) => {
             if (!confirmDelete()) {
               cancel();
@@ -215,18 +254,18 @@
           }}
         >
           <input type="hidden" name="date" value={date} />
-          <button type="submit" class="btn btn-danger" disabled={saving}>
+          <button type="submit" class="btn bg-(--color-danger-light) text-(--color-danger) hover:bg-(--color-danger) hover:text-white" disabled={saving}>
             Delete
           </button>
         </form>
       {/if}
-      <div class="footer-right">
+      <div class="flex gap-2 ml-auto">
         <button type="button" class="btn btn-secondary" onclick={closeModal} disabled={saving}>
           Cancel
         </button>
         <form
           method="POST"
-          action={isEditing ? '?/updateEntry' : '?/createEntry'}
+          action={isEditing ? '/calendar?/updateEntry' : '/calendar?/createEntry'}
           use:enhance={() => {
             saving = true;
             return ({ result }) => handleFormResult(result);
@@ -242,134 +281,3 @@
     </footer>
   </div>
 </div>
-
-<style>
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(61, 54, 48, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-lg);
-    z-index: 100;
-    backdrop-filter: blur(4px);
-  }
-
-  .modal {
-    background: var(--color-bg-card);
-    border-radius: var(--radius-xl);
-    width: 100%;
-    max-width: 560px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: var(--shadow-lg);
-  }
-
-  .modal-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    padding: var(--space-xl);
-    border-bottom: 1px solid var(--color-border-light);
-  }
-
-  .modal-header h2 {
-    margin: 0;
-    font-size: 1.5rem;
-  }
-
-  .date-display {
-    color: var(--color-text-muted);
-    font-size: 0.875rem;
-    margin-top: var(--space-xs);
-  }
-
-  .close-btn {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-full);
-    color: var(--color-text-muted);
-    transition: all var(--transition-fast);
-  }
-
-  .close-btn:hover {
-    background: var(--color-bg-hover);
-    color: var(--color-text);
-  }
-
-  .modal-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--space-xl);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xl);
-  }
-
-  .form-section h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: var(--space-md);
-    color: var(--color-text);
-  }
-
-  textarea {
-    width: 100%;
-    padding: var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    resize: vertical;
-    font-size: 0.95rem;
-    transition: border-color var(--transition-fast);
-    background: var(--color-bg);
-  }
-
-  textarea:focus {
-    outline: none;
-    border-color: var(--color-primary);
-  }
-
-  .workout-details {
-    margin-top: var(--space-md);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-  }
-
-  .workout-details h4 {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    margin: 0;
-  }
-
-  .modal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-lg) var(--space-xl);
-    border-top: 1px solid var(--color-border-light);
-    gap: var(--space-md);
-  }
-
-  .footer-right {
-    display: flex;
-    gap: var(--space-sm);
-    margin-left: auto;
-  }
-
-  .btn-danger {
-    background: var(--color-danger-light);
-    color: var(--color-danger);
-  }
-
-  .btn-danger:hover {
-    background: var(--color-danger);
-    color: white;
-  }
-</style>

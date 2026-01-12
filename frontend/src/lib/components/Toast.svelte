@@ -13,50 +13,8 @@
 </script>
 
 {#if toast}
-  <div class="toast toast-{toast.type} animate-slide-up">
-    <span class="toast-icon">{getIcon(toast.type)}</span>
-    <span class="toast-text">{toast.text}</span>
+  <div class="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 px-6 py-4 rounded-full font-medium shadow-xl z-200 animate-slide-up {toast.type === 'success' ? 'bg-(--color-success)' : toast.type === 'error' ? 'bg-(--color-danger)' : 'bg-(--color-text)'} text-white">
+    <span class="w-5 h-5 flex items-center justify-center bg-white/20 rounded-full text-xs">{getIcon(toast.type)}</span>
+    <span class="text-sm">{toast.text}</span>
   </div>
 {/if}
-
-<style>
-  .toast {
-    position: fixed;
-    bottom: var(--space-xl);
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-md) var(--space-lg);
-    border-radius: var(--radius-full);
-    background: var(--color-text);
-    color: white;
-    font-weight: 500;
-    box-shadow: var(--shadow-lg);
-    z-index: 200;
-  }
-
-  .toast-success {
-    background: var(--color-success);
-  }
-
-  .toast-error {
-    background: var(--color-danger);
-  }
-
-  .toast-icon {
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: var(--radius-full);
-    font-size: 0.75rem;
-  }
-
-  .toast-text {
-    font-size: 0.95rem;
-  }
-</style>
