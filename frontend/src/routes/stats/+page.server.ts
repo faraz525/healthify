@@ -3,11 +3,19 @@ import { getStats, type Stats, type MonthlyStats, type CommonIssue } from '$lib/
 
 export type { Stats, MonthlyStats, CommonIssue };
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, locals }) => {
+  if (!locals.user) {
+    return {
+      stats: null,
+      period: 30
+    };
+  }
+
+  const userId = locals.user.id;
   const days = parseInt(url.searchParams.get('days') || '30');
   const validDays = Math.min(Math.max(days, 1), 365);
 
-  const stats = getStats(validDays);
+  const stats = getStats(userId, validDays);
 
   return {
     stats,

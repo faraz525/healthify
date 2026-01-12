@@ -17,14 +17,14 @@ export type EntryInput = {
   }>;
 };
 
-export function getEntryByDate(date: string) {
+export function getEntryByDate(userId: string, date: string) {
   return db.query.dailyEntries.findFirst({
-    where: eq(dailyEntries.date, date),
+    where: and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)),
     with: { healthIssues: true }
   }).sync();
 }
 
-export function getEntries(options: {
+export function getEntries(userId: string, options: {
   startDate?: string;
   endDate?: string;
   limit?: number;
@@ -32,12 +32,12 @@ export function getEntries(options: {
 } = {}) {
   const { startDate, endDate, limit = 30, offset = 0 } = options;
 
-  const conditions = [];
+  const conditions = [eq(dailyEntries.userId, userId)];
   if (startDate) conditions.push(gte(dailyEntries.date, startDate));
   if (endDate) conditions.push(lte(dailyEntries.date, endDate));
 
   return db.query.dailyEntries.findMany({
-    where: conditions.length > 0 ? and(...conditions) : undefined,
+    where: and(...conditions),
     with: { healthIssues: true },
     orderBy: [desc(dailyEntries.date)],
     limit: Math.min(limit, 100),
@@ -45,10 +45,11 @@ export function getEntries(options: {
   }).sync();
 }
 
-export function createEntry(data: EntryInput) {
+export function createEntry(userId: string, data: EntryInput) {
   const { healthIssues: issues, ...entryData } = data;
 
   const result = db.insert(dailyEntries).values({
+    userId,
     date: entryData.date,
     stressLevel: entryData.stressLevel,
     workedOut: entryData.workedOut ?? false,
@@ -71,11 +72,11 @@ export function createEntry(data: EntryInput) {
     ).run();
   }
 
-  return getEntryByDate(data.date);
+  return getEntryByDate(userId, data.date);
 }
 
-export function updateEntry(date: string, data: Partial<EntryInput>) {
-  const existing = getEntryByDate(date);
+export function updateEntry(userId: string, date: string, data: Partial<EntryInput>) {
+  const existing = getEntryByDate(userId, date);
   if (!existing) return null;
 
   const { healthIssues: issues, ...entryData } = data;
@@ -87,7 +88,7 @@ export function updateEntry(date: string, data: Partial<EntryInput>) {
         ...entryData,
         updatedAt: new Date().toISOString()
       })
-      .where(eq(dailyEntries.date, date))
+      .where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date)))
       .run();
   }
 
@@ -108,18 +109,18 @@ export function updateEntry(date: string, data: Partial<EntryInput>) {
     }
   }
 
-  return getEntryByDate(date);
+  return getEntryByDate(userId, date);
 }
 
-export function deleteEntry(date: string) {
-  const existing = getEntryByDate(date);
+export function deleteEntry(userId: string, date: string) {
+  const existing = getEntryByDate(userId, date);
   if (!existing) return false;
 
-  db.delete(dailyEntries).where(eq(dailyEntries.date, date)).run();
+  db.delete(dailyEntries).where(and(eq(dailyEntries.userId, userId), eq(dailyEntries.date, date))).run();
   return true;
 }
 
-export function getTodayEntry() {
+export function getTodayEntry(userId: string) {
   const today = new Date().toISOString().split('T')[0];
-  return getEntryByDate(today);
+  return getEntryByDate(userId, today);
 }

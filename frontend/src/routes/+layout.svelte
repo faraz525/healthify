@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/stores';
+  import { enhance } from '$app/forms';
   import { modalOpen } from '$lib/stores/ui';
   import { issueTypes } from '$lib/stores/issueTypes';
   import { entries } from '$lib/stores/entries';
@@ -14,8 +15,8 @@
 
   // Sync layout data to stores
   $effect(() => {
-    issueTypes.set(data.issueTypes);
-    entries.set(data.entries);
+    if (data.issueTypes) issueTypes.set(data.issueTypes);
+    if (data.entries) entries.set(data.entries);
   });
 
   function toggleMenu() {
@@ -45,6 +46,14 @@
         <a href="/" class="nav-link" class:active={$page.url.pathname === '/'}>Calendar</a>
         <a href="/workouts" class="nav-link" class:active={$page.url.pathname === '/workouts'}>Workouts</a>
         <a href="/stats" class="nav-link" class:active={$page.url.pathname === '/stats'}>Stats</a>
+        {#if data.user}
+          <div class="user-menu">
+            <span class="user-email">{data.user.email.split('@')[0]}</span>
+            <form action="/logout" method="POST" use:enhance>
+              <button type="submit" class="logout-btn">Logout</button>
+            </form>
+          </div>
+        {/if}
       </nav>
 
       <!-- Mobile Hamburger Button -->
@@ -66,6 +75,14 @@
         <a href="/" class="mobile-nav-link" onclick={closeMenu}>Calendar</a>
         <a href="/workouts" class="mobile-nav-link" onclick={closeMenu}>Workouts</a>
         <a href="/stats" class="mobile-nav-link" onclick={closeMenu}>Stats</a>
+        {#if data.user}
+          <div class="mobile-user-section">
+            <span class="mobile-user-email">{data.user.email}</span>
+            <form action="/logout" method="POST" use:enhance>
+              <button type="submit" class="mobile-logout-btn" onclick={closeMenu}>Logout</button>
+            </form>
+          </div>
+        {/if}
       </nav>
     {/if}
   </header>
@@ -156,6 +173,37 @@
     color: var(--color-primary);
   }
 
+  .user-menu {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-left: var(--space-lg);
+    padding-left: var(--space-lg);
+    border-left: 1px solid var(--color-border-light);
+  }
+
+  .user-email {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .logout-btn {
+    padding: var(--space-xs) var(--space-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .logout-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+  }
+
   /* Hamburger Button - Hidden on desktop */
   .hamburger-btn {
     display: none;
@@ -213,6 +261,32 @@
 
   .mobile-nav-link:hover {
     color: var(--color-primary);
+  }
+
+  .mobile-user-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-md) var(--space-sm);
+    margin-top: var(--space-sm);
+    border-top: 1px solid var(--color-border-light);
+  }
+
+  .mobile-user-email {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .mobile-logout-btn {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text);
+    background: var(--color-bg-hover);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: center;
   }
 
   .app-main {

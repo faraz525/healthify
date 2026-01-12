@@ -26,14 +26,14 @@ export interface Stats {
   monthlyBreakdown: MonthlyStats[];
 }
 
-export function getStats(days = 30): Stats {
+export function getStats(userId: string, days = 30): Stats {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   const startDateStr = startDate.toISOString().split('T')[0];
 
-  // Get entries in date range
+  // Get entries in date range for this user
   const entries = db.query.dailyEntries.findMany({
-    where: gte(dailyEntries.date, startDateStr),
+    where: and(eq(dailyEntries.userId, userId), gte(dailyEntries.date, startDateStr)),
     with: { healthIssues: true }
   }).sync();
 
@@ -58,7 +58,7 @@ export function getStats(days = 30): Stats {
     .from(healthIssues)
     .innerJoin(dailyEntries, eq(healthIssues.dailyEntryId, dailyEntries.id))
     .leftJoin(issueTypes, eq(healthIssues.issueType, issueTypes.name))
-    .where(gte(dailyEntries.date, startDateStr))
+    .where(and(eq(dailyEntries.userId, userId), gte(dailyEntries.date, startDateStr)))
     .groupBy(healthIssues.issueType)
     .orderBy(desc(sql`count(*)`))
     .limit(5)
@@ -70,14 +70,14 @@ export function getStats(days = 30): Stats {
     count: r.count
   }));
 
-  // Calculate entry streak (consecutive days with entries) - fetches all entries
-  const streakDays = calculateEntryStreak();
+  // Calculate entry streak (consecutive days with entries)
+  const streakDays = calculateEntryStreak(userId);
 
   // Calculate workout streak (consecutive days worked out)
-  const workoutStreak = calculateWorkoutStreak();
+  const workoutStreak = calculateWorkoutStreak(userId);
 
   // Calculate monthly breakdown
-  const monthlyBreakdown = calculateMonthlyBreakdown(days);
+  const monthlyBreakdown = calculateMonthlyBreakdown(userId, days);
 
   return {
     totalEntries,
@@ -90,9 +90,10 @@ export function getStats(days = 30): Stats {
   };
 }
 
-function calculateEntryStreak(): number {
-  // Get all entries (not filtered by date range) to calculate true streak
+function calculateEntryStreak(userId: string): number {
+  // Get all entries for this user
   const allEntries = db.query.dailyEntries.findMany({
+    where: eq(dailyEntries.userId, userId),
     orderBy: desc(dailyEntries.date)
   }).sync();
 
@@ -115,9 +116,10 @@ function calculateEntryStreak(): number {
   return streak;
 }
 
-function calculateWorkoutStreak(): number {
-  // Get all entries ordered by date descending
+function calculateWorkoutStreak(userId: string): number {
+  // Get all entries for this user ordered by date descending
   const allEntries = db.query.dailyEntries.findMany({
+    where: eq(dailyEntries.userId, userId),
     orderBy: desc(dailyEntries.date)
   }).sync();
 
@@ -145,14 +147,14 @@ function calculateWorkoutStreak(): number {
   return streak;
 }
 
-function calculateMonthlyBreakdown(days: number): MonthlyStats[] {
+function calculateMonthlyBreakdown(userId: string, days: number): MonthlyStats[] {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   const startDateStr = startDate.toISOString().split('T')[0];
 
-  // Get all entries in the range
+  // Get all entries in the range for this user
   const entries = db.query.dailyEntries.findMany({
-    where: gte(dailyEntries.date, startDateStr)
+    where: and(eq(dailyEntries.userId, userId), gte(dailyEntries.date, startDateStr))
   }).sync();
 
   // Group by month

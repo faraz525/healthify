@@ -26,7 +26,11 @@
 		"vite": "^7.2.2"
 	},
 	"dependencies": {
+		"bcrypt": "^5.1.1",
 		"better-sqlite3": "^12.5.0",
 		"drizzle-orm": "^0.45.1"
+	},
+	"optionalDependencies": {
+		"@types/bcrypt": "^5.0.2"
 	}
 }

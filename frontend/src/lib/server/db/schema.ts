@@ -1,8 +1,27 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
+// Users table
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  role: text('role').default('user'),
+  createdAt: text('created_at').default('CURRENT_TIMESTAMP'),
+  updatedAt: text('updated_at')
+});
+
+// Sessions table for cookie-based auth
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').default('CURRENT_TIMESTAMP')
+});
+
 // Daily Entries table
 export const dailyEntries = sqliteTable('daily_entries', {
+  userId: text('user_id').notNull().references(() => users.id),
   id: integer('id').primaryKey({ autoIncrement: true }),
   date: text('date').notNull().unique(),
   stressLevel: integer('stress_level'),
@@ -39,6 +58,7 @@ export const issueTypes = sqliteTable('issue_types', {
 // Workout Routines table
 export const workoutRoutines = sqliteTable('workout_routines', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull().references(() => users.id),
   name: text('name').notNull(),
   description: text('description'),
   isActive: integer('is_active', { mode: 'boolean' }).default(true),
@@ -49,6 +69,7 @@ export const workoutRoutines = sqliteTable('workout_routines', {
 // Workouts table (formerly workout_days - now standalone without requiring a routine)
 export const workoutDays = sqliteTable('workout_days', {
   id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').references(() => users.id), // For standalone workouts
   routineId: integer('routine_id').references(() => workoutRoutines.id, { onDelete: 'cascade' }), // Optional - for backwards compatibility
   name: text('name').notNull(),
   dayOfWeek: integer('day_of_week'),
@@ -69,7 +90,24 @@ export const exercises = sqliteTable('exercises', {
 });
 
 // Relations
-export const dailyEntriesRelations = relations(dailyEntries, ({ many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(sessions),
+  dailyEntries: many(dailyEntries),
+  workoutRoutines: many(workoutRoutines)
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id]
+  })
+}));
+
+export const dailyEntriesRelations = relations(dailyEntries, ({ one, many }) => ({
+  user: one(users, {
+    fields: [dailyEntries.userId],
+    references: [users.id]
+  }),
   healthIssues: many(healthIssues)
 }));
 
@@ -80,7 +118,11 @@ export const healthIssuesRelations = relations(healthIssues, ({ one }) => ({
   })
 }));
 
-export const workoutRoutinesRelations = relations(workoutRoutines, ({ many }) => ({
+export const workoutRoutinesRelations = relations(workoutRoutines, ({ one, many }) => ({
+  user: one(users, {
+    fields: [workoutRoutines.userId],
+    references: [users.id]
+  }),
   days: many(workoutDays)
 }));
 

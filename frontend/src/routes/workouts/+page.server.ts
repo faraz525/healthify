@@ -24,10 +24,22 @@ import {
   getExerciseHistory
 } from '$lib/server/sessions';
 
-export const load: PageServerLoad = async () => {
-  const workouts = getWorkouts();
-  const todaysWorkout = getTodaysWorkout();
-  const activeSession = getActiveSession();
+export const load: PageServerLoad = async ({ locals }) => {
+  if (!locals.user) {
+    return {
+      workouts: [],
+      todaysWorkout: null,
+      activeSession: null,
+      sessionLogs: {},
+      sessionPRs: [],
+      exercisePreviousBests: {}
+    };
+  }
+
+  const userId = locals.user.id;
+  const workouts = getWorkouts(userId);
+  const todaysWorkout = getTodaysWorkout(userId);
+  const activeSession = getActiveSession(userId);
 
   // Get exercise logs and PRs for the active session
   let sessionLogs: Record<number, Array<{ setNumber: number; weight: string | null; reps: number | null; isPR: boolean; id: number }>> = {};
@@ -52,7 +64,7 @@ export const load: PageServerLoad = async () => {
     }
 
     // Get PRs
-    const prs = getSessionPRs(activeSession.id);
+    const prs = getSessionPRs(userId, activeSession.id);
     sessionPRs = prs.map(pr => ({
       exerciseId: pr.exerciseId,
       exerciseName: pr.exercise?.name ?? 'Unknown',
@@ -80,7 +92,10 @@ export const load: PageServerLoad = async () => {
 
 export const actions: Actions = {
   // Direct workout actions (no routine required)
-  createWorkout: async ({ request }) => {
+  createWorkout: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const name = formData.get('name') as string;
     const dayOfWeekStr = formData.get('dayOfWeek') as string;
@@ -90,16 +105,19 @@ export const actions: Actions = {
       return fail(400, { error: 'Name is required' });
     }
 
-    const workout = createWorkout({ name, dayOfWeek });
+    const workout = createWorkout(userId, { name, dayOfWeek });
     return { success: true, workout };
   },
 
-  updateWorkout: async ({ request }) => {
+  updateWorkout: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
     const data = JSON.parse(formData.get('data') as string);
 
-    const workout = updateWorkout(id, data);
+    const workout = updateWorkout(userId, id, data);
     if (!workout) {
       return fail(404, { error: 'Workout not found' });
     }
@@ -107,11 +125,14 @@ export const actions: Actions = {
     return { success: true, workout };
   },
 
-  deleteWorkout: async ({ request }) => {
+  deleteWorkout: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
 
-    const deleted = deleteWorkout(id);
+    const deleted = deleteWorkout(userId, id);
     if (!deleted) {
       return fail(404, { error: 'Workout not found' });
     }
@@ -119,12 +140,15 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  createExercise: async ({ request }) => {
+  createExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const dayId = parseInt(formData.get('dayId') as string);
     const data = JSON.parse(formData.get('data') as string);
 
-    const exercise = createExercise(dayId, data);
+    const exercise = createExercise(userId, dayId, data);
     if (!exercise) {
       return fail(404, { error: 'Day not found' });
     }
@@ -132,12 +156,15 @@ export const actions: Actions = {
     return { success: true, exercise };
   },
 
-  updateExercise: async ({ request }) => {
+  updateExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const exerciseId = parseInt(formData.get('exerciseId') as string);
     const data = JSON.parse(formData.get('data') as string);
 
-    const exercise = updateExercise(exerciseId, data);
+    const exercise = updateExercise(userId, exerciseId, data);
     if (!exercise) {
       return fail(404, { error: 'Exercise not found' });
     }
@@ -145,11 +172,14 @@ export const actions: Actions = {
     return { success: true, exercise };
   },
 
-  deleteExercise: async ({ request }) => {
+  deleteExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const exerciseId = parseInt(formData.get('exerciseId') as string);
 
-    const deleted = deleteExercise(exerciseId);
+    const deleted = deleteExercise(userId, exerciseId);
     if (!deleted) {
       return fail(404, { error: 'Exercise not found' });
     }
@@ -158,7 +188,10 @@ export const actions: Actions = {
   },
 
   // Session management actions
-  startSession: async ({ request }) => {
+  startSession: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const workoutDayId = parseInt(formData.get('workoutDayId') as string);
 
@@ -166,7 +199,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Workout day ID is required' });
     }
 
-    const session = startSession(workoutDayId);
+    const session = startSession(userId, workoutDayId);
     if (!session) {
       return fail(400, { error: 'Could not start session. There may already be an active session.' });
     }
@@ -174,7 +207,10 @@ export const actions: Actions = {
     return { success: true, session };
   },
 
-  logSet: async ({ request }) => {
+  logSet: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const sessionId = parseInt(formData.get('sessionId') as string);
     const exerciseId = parseInt(formData.get('exerciseId') as string);
@@ -186,7 +222,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Session ID, exercise ID, and set number are required' });
     }
 
-    const log = logExerciseSet(sessionId, exerciseId, setNumber, weight, reps);
+    const log = logExerciseSet(userId, sessionId, exerciseId, setNumber, weight, reps);
     if (!log) {
       return fail(400, { error: 'Could not log set' });
     }
@@ -199,7 +235,10 @@ export const actions: Actions = {
     };
   },
 
-  updateLog: async ({ request }) => {
+  updateLog: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const logId = parseInt(formData.get('logId') as string);
     const weight = formData.get('weight') as string | null;
@@ -209,7 +248,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Log ID is required' });
     }
 
-    const log = updateExerciseLog(logId, weight, reps);
+    const log = updateExerciseLog(userId, logId, weight, reps);
     if (!log) {
       return fail(404, { error: 'Log not found' });
     }
@@ -222,7 +261,10 @@ export const actions: Actions = {
     };
   },
 
-  deleteLog: async ({ request }) => {
+  deleteLog: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const logId = parseInt(formData.get('logId') as string);
 
@@ -230,7 +272,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Log ID is required' });
     }
 
-    const deleted = deleteExerciseLog(logId);
+    const deleted = deleteExerciseLog(userId, logId);
     if (!deleted) {
       return fail(404, { error: 'Log not found' });
     }
@@ -238,7 +280,10 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  completeSession: async ({ request }) => {
+  completeSession: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const sessionId = parseInt(formData.get('sessionId') as string);
     const notes = formData.get('notes') as string | null;
@@ -247,18 +292,21 @@ export const actions: Actions = {
       return fail(400, { error: 'Session ID is required' });
     }
 
-    const session = completeSession(sessionId, notes ?? undefined);
+    const session = completeSession(userId, sessionId, notes ?? undefined);
     if (!session) {
       return fail(400, { error: 'Could not complete session' });
     }
 
     // Get final PRs for the session
-    const prs = getSessionPRs(sessionId);
+    const prs = getSessionPRs(userId, sessionId);
 
     return { success: true, session, prs };
   },
 
-  cancelSession: async ({ request }) => {
+  cancelSession: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const sessionId = parseInt(formData.get('sessionId') as string);
 
@@ -266,7 +314,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Session ID is required' });
     }
 
-    const cancelled = cancelSession(sessionId);
+    const cancelled = cancelSession(userId, sessionId);
     if (!cancelled) {
       return fail(400, { error: 'Could not cancel session' });
     }
@@ -274,7 +322,10 @@ export const actions: Actions = {
     return { success: true };
   },
 
-  getExerciseHistory: async ({ request }) => {
+  getExerciseHistory: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
     const formData = await request.formData();
     const exerciseId = parseInt(formData.get('exerciseId') as string);
     const limit = parseInt(formData.get('limit') as string) || 20;
@@ -283,7 +334,7 @@ export const actions: Actions = {
       return fail(400, { error: 'Exercise ID is required' });
     }
 
-    const history = getExerciseHistory(exerciseId, limit);
+    const history = getExerciseHistory(userId, exerciseId, limit);
 
     // Group by session and format for display
     const formattedHistory = history.map(log => ({
