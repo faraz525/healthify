@@ -1,6 +1,99 @@
 import { db } from './db';
 import { workoutRoutines, workoutDays, exercises } from './db/schema';
-import { eq, asc, and } from 'drizzle-orm';
+import { eq, asc, and, isNull } from 'drizzle-orm';
+
+// ============================================
+// Direct Workout Functions (No Routine Required)
+// ============================================
+
+export function getWorkouts() {
+  return db.query.workoutDays.findMany({
+    with: { exercises: true },
+    orderBy: [asc(workoutDays.sortOrder)]
+  }).sync();
+}
+
+export function getWorkout(id: number) {
+  return db.query.workoutDays.findFirst({
+    where: eq(workoutDays.id, id),
+    with: { exercises: true }
+  }).sync();
+}
+
+export function getTodaysWorkout() {
+  // JavaScript: Sunday=0, Monday=1... we need Monday=0
+  const jsDay = new Date().getDay();
+  const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
+
+  // Find any workout assigned to today's day of week
+  return db.query.workoutDays.findFirst({
+    where: eq(workoutDays.dayOfWeek, dayOfWeek),
+    with: { exercises: true }
+  }).sync();
+}
+
+export type WorkoutInput = {
+  name: string;
+  dayOfWeek?: number | null;
+  sortOrder?: number;
+  exercises?: Array<{
+    name: string;
+    targetSets?: number;
+    targetReps?: string;
+    targetWeight?: string;
+    restSeconds?: number;
+    notes?: string;
+    sortOrder?: number;
+  }>;
+};
+
+export function createWorkout(data: WorkoutInput) {
+  const result = db.insert(workoutDays).values({
+    name: data.name,
+    dayOfWeek: data.dayOfWeek,
+    sortOrder: data.sortOrder ?? 0
+    // routineId is null - standalone workout
+  }).returning().all();
+
+  const workout = result[0];
+
+  if (data.exercises && data.exercises.length > 0) {
+    db.insert(exercises).values(
+      data.exercises.map(ex => ({
+        workoutDayId: workout.id,
+        name: ex.name,
+        targetSets: ex.targetSets,
+        targetReps: ex.targetReps,
+        targetWeight: ex.targetWeight,
+        restSeconds: ex.restSeconds,
+        notes: ex.notes,
+        sortOrder: ex.sortOrder ?? 0
+      }))
+    ).run();
+  }
+
+  return getWorkout(workout.id);
+}
+
+export function updateWorkout(id: number, data: Partial<{
+  name: string;
+  dayOfWeek: number | null;
+  sortOrder: number;
+}>) {
+  db.update(workoutDays).set(data).where(eq(workoutDays.id, id)).run();
+  return getWorkout(id);
+}
+
+export function deleteWorkout(id: number) {
+  const existing = getWorkout(id);
+  if (!existing) return false;
+  db.delete(workoutDays).where(eq(workoutDays.id, id)).run();
+  return true;
+}
+
+// ============================================
+// Legacy Routine Functions (Kept for compatibility)
+// ============================================
 
 export function getWorkoutRoutines(activeOnly = true) {
   return db.query.workoutRoutines.findMany({
@@ -23,26 +116,6 @@ export function getWorkoutRoutine(id: number) {
         orderBy: [asc(workoutDays.sortOrder)]
       }
     }
-  }).sync();
-}
-
-export function getTodaysWorkout() {
-  // JavaScript: Sunday=0, Monday=1... we need Monday=0
-  const jsDay = new Date().getDay();
-  const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
-
-  const activeRoutine = db.query.workoutRoutines.findFirst({
-    where: eq(workoutRoutines.isActive, true)
-  }).sync();
-
-  if (!activeRoutine) return null;
-
-  return db.query.workoutDays.findFirst({
-    where: and(
-      eq(workoutDays.routineId, activeRoutine.id),
-      eq(workoutDays.dayOfWeek, dayOfWeek)
-    ),
-    with: { exercises: true }
   }).sync();
 }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DailyEntry } from '$lib/api';
+  import type { DailyEntry } from '$lib/stores/entries';
   import { getWorkoutDisplay } from '$lib/config/workoutTypes';
 
   interface Props {
@@ -13,11 +13,14 @@
   let { day, entry, isToday = false, isFuture = false, onclick }: Props = $props();
 
   let hasEntry = $derived(!!entry);
-  let hasWorkout = $derived(entry?.worked_out ?? false);
-  let workoutType = $derived(entry?.workout_type ?? null);
+  let hasWorkout = $derived(entry?.workedOut ?? false);
+  let workoutType = $derived(entry?.workoutType ?? null);
+  let workoutNotes = $derived(entry?.workoutNotes ?? null);
   let workoutDisplay = $derived(hasWorkout ? getWorkoutDisplay(workoutType) : null);
-  let hasIssues = $derived((entry?.health_issues?.length ?? 0) > 0);
-  let stressLevel = $derived(entry?.stress_level ?? null);
+  let hasIssues = $derived((entry?.healthIssues?.length ?? 0) > 0);
+  let stressLevel = $derived(entry?.stressLevel ?? null);
+  // Check if workout notes contain PR (from auto-synced sessions)
+  let hasPR = $derived(workoutNotes?.includes('PR') ?? false);
 
   function getStressColor(level: number | null): string {
     if (level === null) return 'transparent';
@@ -47,12 +50,15 @@
         ></div>
       {/if}
       {#if hasWorkout && workoutDisplay}
-        <div class="workout-indicator" class:has-emoji={workoutDisplay.emoji} title={workoutType || 'Worked out'}>
+        <div class="workout-indicator" class:has-emoji={workoutDisplay.emoji} title={workoutNotes || workoutType || 'Worked out'}>
           <span class="workout-text">{workoutDisplay.text}</span>
+          {#if hasPR}
+            <span class="pr-badge" title="Personal Record!">!</span>
+          {/if}
         </div>
       {/if}
       {#if hasIssues}
-        <div class="issue-indicator" title="{entry?.health_issues.length} health issue(s)">
+        <div class="issue-indicator" title="{entry?.healthIssues.length} health issue(s)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
           </svg>
@@ -65,6 +71,8 @@
 <style>
   .day-cell {
     aspect-ratio: 1;
+    min-height: 44px;
+    min-width: 44px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -141,6 +149,20 @@
     font-weight: normal;
   }
 
+  .pr-badge {
+    font-size: 0.55rem;
+    font-weight: 800;
+    color: white;
+    background: var(--color-warning);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 1px;
+  }
+
   .issue-indicator {
     color: var(--color-warning);
     display: flex;
@@ -150,13 +172,15 @@
   /* Mobile responsiveness */
   @media (max-width: 480px) {
     .day-cell {
+      min-height: 48px;
+      min-width: 48px;
       gap: 2px;
-      padding: 2px;
+      padding: 4px;
       border-radius: var(--radius-sm);
     }
 
     .day-number {
-      font-size: 0.8rem;
+      font-size: 0.85rem;
     }
 
     .indicators {
@@ -164,21 +188,27 @@
     }
 
     .stress-dot {
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
     }
 
     .workout-text {
-      font-size: 0.5rem;
+      font-size: 0.55rem;
     }
 
     .workout-indicator.has-emoji .workout-text {
-      font-size: 0.6rem;
+      font-size: 0.65rem;
+    }
+
+    .pr-badge {
+      width: 10px;
+      height: 10px;
+      font-size: 0.5rem;
     }
 
     .issue-indicator svg {
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
     }
   }
 </style>

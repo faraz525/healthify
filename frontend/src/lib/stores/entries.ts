@@ -5,6 +5,7 @@ export interface DailyEntry {
   date: string;
   stressLevel: number | null;
   workedOut: boolean | null;
+  workoutType: string | null;
   workoutNotes: string | null;
   notes: string | null;
   healthIssues: Array<{

@@ -1,13 +1,30 @@
 <script lang="ts">
-  import { entries, entriesByDate } from '$lib/stores/entries';
+  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { entriesByDate, type DailyEntry } from '$lib/stores/entries';
   import { issueTypes } from '$lib/stores/issueTypes';
   import { selectedDate, closeModal, showToast } from '$lib/stores/ui';
-  import { api, type HealthIssue, type WorkoutDay } from '$lib/api';
-  import { onMount } from 'svelte';
   import StressSlider from './StressSlider.svelte';
   import WorkoutToggle from './WorkoutToggle.svelte';
   import WorkoutTypeSelector from './WorkoutTypeSelector.svelte';
   import IssueSelector from './IssueSelector.svelte';
+
+  // Health issue type for this component
+  interface HealthIssue {
+    issueType: string;
+    severity: number | null;
+    notes: string | null;
+    timeOfDay: string | null;
+  }
+
+  // Workout day type
+  interface WorkoutDay {
+    id: number;
+    name: string;
+    dayOfWeek: number | null;
+    sortOrder: number;
+  }
 
   let date = $derived($selectedDate);
   let existingEntry = $derived(date ? $entriesByDate.get(date) : undefined);
@@ -20,32 +37,30 @@
   let notes = $state('');
   let healthIssues = $state<HealthIssue[]>([]);
   let saving = $state(false);
-  let routineDays = $state<WorkoutDay[]>([]);
 
-  // Fetch workout routines on mount
-  onMount(async () => {
-    try {
-      const routines = await api.getWorkoutRoutines();
-      // Get all days from all routines (or just active one)
-      const activeRoutine = routines.find(r => r.is_active) || routines[0];
-      if (activeRoutine) {
-        routineDays = activeRoutine.days;
-      }
-    } catch (e) {
-      console.error('Failed to load routines:', e);
-    }
+  // Get workout routines from page data
+  let routineDays = $derived.by(() => {
+    const pageData = $page.data as { workoutRoutines?: Array<{ days: WorkoutDay[], isActive: boolean | null }> };
+    const routines = pageData.workoutRoutines || [];
+    const activeRoutine = routines.find(r => r.isActive) || routines[0];
+    return activeRoutine?.days || [];
   });
 
   // Reset form when date changes
   $effect(() => {
     if (date) {
       if (existingEntry) {
-        stressLevel = existingEntry.stress_level;
-        workedOut = existingEntry.worked_out;
-        workoutType = existingEntry.workout_type || null;
-        workoutNotes = existingEntry.workout_notes || '';
+        stressLevel = existingEntry.stressLevel;
+        workedOut = existingEntry.workedOut ?? false;
+        workoutType = existingEntry.workoutType || null;
+        workoutNotes = existingEntry.workoutNotes || '';
         notes = existingEntry.notes || '';
-        healthIssues = existingEntry.health_issues.map(i => ({ ...i }));
+        healthIssues = existingEntry.healthIssues.map(i => ({
+          issueType: i.issueType,
+          severity: i.severity,
+          notes: i.notes,
+          timeOfDay: i.timeOfDay
+        }));
       } else {
         stressLevel = null;
         workedOut = false;
@@ -68,54 +83,51 @@
     });
   }
 
-  async function handleSave() {
-    if (!date) return;
+  function getEntryData() {
+    return {
+      date,
+      stressLevel,
+      workedOut,
+      workoutType: workedOut ? workoutType : null,
+      workoutNotes: workoutNotes || null,
+      notes: notes || null,
+      healthIssues: healthIssues.map(({ issueType, severity, notes, timeOfDay }) => ({
+        issueType,
+        severity,
+        notes,
+        timeOfDay
+      }))
+    };
+  }
 
-    saving = true;
-    try {
-      const entryData = {
-        date,
-        stress_level: stressLevel,
-        worked_out: workedOut,
-        workout_type: workedOut ? workoutType : null,
-        workout_notes: workoutNotes || null,
-        notes: notes || null,
-        health_issues: healthIssues.map(({ issue_type, severity, notes, time_of_day }) => ({
-          issue_type,
-          severity,
-          notes,
-          time_of_day
-        }))
-      };
-
-      if (isEditing) {
-        await entries.update(date, entryData);
-        showToast('Entry updated successfully', 'success');
-      } else {
-        await entries.create(entryData);
-        showToast('Entry created successfully', 'success');
-      }
+  function handleFormResult(result: { type: string; data?: { success?: boolean; error?: string } }) {
+    saving = false;
+    if (result.type === 'success' || (result.type === 'redirect')) {
+      showToast(isEditing ? 'Entry updated successfully' : 'Entry created successfully', 'success');
+      invalidateAll();
       closeModal();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to save entry', 'error');
-    } finally {
-      saving = false;
+    } else if (result.type === 'failure' && result.data?.error) {
+      showToast(result.data.error, 'error');
+    } else {
+      showToast('Failed to save entry', 'error');
     }
   }
 
-  async function handleDelete() {
-    if (!date || !confirm('Are you sure you want to delete this entry?')) return;
-
-    saving = true;
-    try {
-      await entries.delete(date);
+  function handleDeleteResult(result: { type: string; data?: { success?: boolean; error?: string } }) {
+    saving = false;
+    if (result.type === 'success' || (result.type === 'redirect')) {
       showToast('Entry deleted', 'success');
+      invalidateAll();
       closeModal();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to delete entry', 'error');
-    } finally {
-      saving = false;
+    } else if (result.type === 'failure' && result.data?.error) {
+      showToast(result.data.error, 'error');
+    } else {
+      showToast('Failed to delete entry', 'error');
     }
+  }
+
+  function confirmDelete(): boolean {
+    return confirm('Are you sure you want to delete this entry?');
   }
 
   function handleBackdropClick(e: MouseEvent) {
@@ -190,17 +202,42 @@
 
     <footer class="modal-footer">
       {#if isEditing}
-        <button class="btn btn-danger" onclick={handleDelete} disabled={saving}>
-          Delete
-        </button>
+        <form
+          method="POST"
+          action="?/deleteEntry"
+          use:enhance={({ cancel }) => {
+            if (!confirmDelete()) {
+              cancel();
+              return;
+            }
+            saving = true;
+            return ({ result }) => handleDeleteResult(result);
+          }}
+        >
+          <input type="hidden" name="date" value={date} />
+          <button type="submit" class="btn btn-danger" disabled={saving}>
+            Delete
+          </button>
+        </form>
       {/if}
       <div class="footer-right">
-        <button class="btn btn-secondary" onclick={closeModal} disabled={saving}>
+        <button type="button" class="btn btn-secondary" onclick={closeModal} disabled={saving}>
           Cancel
         </button>
-        <button class="btn btn-primary" onclick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : (isEditing ? 'Update' : 'Save')}
-        </button>
+        <form
+          method="POST"
+          action={isEditing ? '?/updateEntry' : '?/createEntry'}
+          use:enhance={() => {
+            saving = true;
+            return ({ result }) => handleFormResult(result);
+          }}
+        >
+          <input type="hidden" name="date" value={date} />
+          <input type="hidden" name="data" value={JSON.stringify(getEntryData())} />
+          <button type="submit" class="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving...' : (isEditing ? 'Update' : 'Save')}
+          </button>
+        </form>
       </div>
     </footer>
   </div>

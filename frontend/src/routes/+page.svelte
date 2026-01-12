@@ -1,21 +1,8 @@
 <script lang="ts">
   import Calendar from '$lib/components/Calendar.svelte';
-  import { api } from '$lib/api';
-  import { onMount } from 'svelte';
+  import type { PageData } from './$types';
 
-  let todayEntry = $state<Awaited<ReturnType<typeof api.getToday>>>(null);
-  let stats = $state<Awaited<ReturnType<typeof api.getStats>> | null>(null);
-
-  onMount(async () => {
-    try {
-      [todayEntry, stats] = await Promise.all([
-        api.getToday(),
-        api.getStats(7)
-      ]);
-    } catch (e) {
-      console.error('Failed to load data:', e);
-    }
-  });
+  let { data }: { data: PageData } = $props();
 
   function getGreeting(): string {
     const hour = new Date().getHours();
@@ -29,10 +16,10 @@
   <div class="page-header">
     <h1>{getGreeting()}</h1>
     <p class="subtitle">
-      {#if todayEntry}
+      {#if data.todayEntry}
         You've logged today's entry.
-        {#if stats && stats.streak_days > 1}
-          🔥 {stats.streak_days} day streak!
+        {#if data.stats && data.stats.streakDays > 1}
+          {data.stats.streakDays} day streak!
         {/if}
       {:else}
         Don't forget to log how you're feeling today.
@@ -40,20 +27,20 @@
     </p>
   </div>
 
-  {#if stats}
+  {#if data.stats}
     <div class="quick-stats">
       <div class="stat-item">
-        <span class="stat-value">{stats.streak_days}</span>
+        <span class="stat-value">{data.stats.streakDays}</span>
         <span class="stat-label">Day Streak</span>
       </div>
       <div class="stat-divider"></div>
       <div class="stat-item">
-        <span class="stat-value">{stats.workout_days}</span>
+        <span class="stat-value">{data.stats.workoutDays}</span>
         <span class="stat-label">Workouts (7d)</span>
       </div>
       <div class="stat-divider"></div>
       <div class="stat-item">
-        <span class="stat-value">{stats.avg_stress ?? '—'}</span>
+        <span class="stat-value">{data.stats.avgStress ?? '—'}</span>
         <span class="stat-label">Avg Stress</span>
       </div>
     </div>

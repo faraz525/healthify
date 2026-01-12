@@ -7,11 +7,19 @@
   }
 
   let { label, value, icon = '', color = 'primary' }: Props = $props();
+
+  // Map icon names to emoji
+  const iconMap: Record<string, string> = {
+    calendar: '📅',
+    fire: '🔥',
+    dumbbell: '💪',
+    heart: '❤️'
+  };
 </script>
 
 <div class="stats-card stats-{color}">
   {#if icon}
-    <span class="stats-icon">{icon}</span>
+    <span class="stats-icon">{iconMap[icon] || icon}</span>
   {/if}
   <div class="stats-content">
     <span class="stats-value">{value}</span>
@@ -51,6 +59,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
+    min-width: 0;
+    overflow: hidden;
   }
 
   .stats-value {
@@ -59,10 +69,16 @@
     font-weight: 600;
     color: var(--color-text);
     line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .stats-label {
     font-size: 0.875rem;
     color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

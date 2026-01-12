@@ -1,5 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { getStats } from '$lib/server/stats';
+import { getStats, type Stats, type MonthlyStats, type CommonIssue } from '$lib/server/stats';
+
+export type { Stats, MonthlyStats, CommonIssue };
 
 export const load: PageServerLoad = async ({ url }) => {
   const days = parseInt(url.searchParams.get('days') || '30');

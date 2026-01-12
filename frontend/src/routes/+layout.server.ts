@@ -1,6 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { getIssueTypes } from '$lib/server/issueTypes';
 import { getEntries } from '$lib/server/entries';
+import { getWorkoutRoutines } from '$lib/server/workouts';
 import { seedDefaultIssueTypes } from '$lib/server/db';
 
 // Seed on first request
@@ -20,8 +21,12 @@ export const load: LayoutServerLoad = async () => {
   const endDate = new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString().split('T')[0];
   const entries = getEntries({ startDate, endDate, limit: 100 });
 
+  // Load workout routines (used by EntryModal on all pages)
+  const workoutRoutines = getWorkoutRoutines();
+
   return {
     issueTypes,
-    entries
+    entries,
+    workoutRoutines
   };
 };
