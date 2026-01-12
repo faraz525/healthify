@@ -1,9 +1,23 @@
 import type { Actions } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 import { createUser, createSession } from '$lib/server/auth';
+import { checkRateLimit, getClientIP, getRateLimitResetTime, RATE_LIMITS } from '$lib/server/rate-limit';
 
 export const actions: Actions = {
   default: async ({ request, cookies }) => {
+    // Rate limiting: 3 signups per IP per hour
+    const clientIP = getClientIP(request);
+    const rateLimitKey = `${RATE_LIMITS.SIGNUP.prefix}:${clientIP}`;
+
+    if (!checkRateLimit(rateLimitKey, RATE_LIMITS.SIGNUP.maxAttempts, RATE_LIMITS.SIGNUP.windowMs)) {
+      const resetTime = getRateLimitResetTime(rateLimitKey);
+      const minutesRemaining = Math.ceil(resetTime / (60 * 1000));
+      return fail(429, {
+        error: `Too many signup attempts. Please try again in ${minutesRemaining} minute${minutesRemaining === 1 ? '' : 's'}.`,
+        email: ''
+      });
+    }
+
     const formData = await request.formData();
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
