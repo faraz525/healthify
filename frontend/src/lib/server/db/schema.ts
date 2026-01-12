@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // Users table
@@ -19,11 +19,21 @@ export const sessions = sqliteTable('sessions', {
   createdAt: text('created_at').default('CURRENT_TIMESTAMP')
 });
 
+// Refresh Tokens table for token-based auth
+export const refreshTokens = sqliteTable('refresh_tokens', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  revokedAt: text('revoked_at'),
+  createdAt: text('created_at').default('CURRENT_TIMESTAMP')
+});
+
 // Daily Entries table
 export const dailyEntries = sqliteTable('daily_entries', {
   userId: text('user_id').notNull().references(() => users.id),
   id: integer('id').primaryKey({ autoIncrement: true }),
-  date: text('date').notNull().unique(),
+  date: text('date').notNull(),
   stressLevel: integer('stress_level'),
   workedOut: integer('worked_out', { mode: 'boolean' }).default(false),
   workoutType: text('workout_type'),
@@ -32,7 +42,9 @@ export const dailyEntries = sqliteTable('daily_entries', {
   deviceMetrics: text('device_metrics', { mode: 'json' }),
   createdAt: text('created_at').default('CURRENT_TIMESTAMP'),
   updatedAt: text('updated_at')
-});
+}, (table) => ({
+  userDateUnique: uniqueIndex('uix_user_date').on(table.userId, table.date)
+}));
 
 // Health Issues table
 export const healthIssues = sqliteTable('health_issues', {
@@ -92,13 +104,22 @@ export const exercises = sqliteTable('exercises', {
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
+  refreshTokens: many(refreshTokens),
   dailyEntries: many(dailyEntries),
-  workoutRoutines: many(workoutRoutines)
+  workoutRoutines: many(workoutRoutines),
+  workoutDays: many(workoutDays)
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
     fields: [sessions.userId],
+    references: [users.id]
+  })
+}));
+
+export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [refreshTokens.userId],
     references: [users.id]
   })
 }));
@@ -127,6 +148,10 @@ export const workoutRoutinesRelations = relations(workoutRoutines, ({ one, many 
 }));
 
 export const workoutDaysRelations = relations(workoutDays, ({ one, many }) => ({
+  user: one(users, {
+    fields: [workoutDays.userId],
+    references: [users.id]
+  }),
   routine: one(workoutRoutines, {
     fields: [workoutDays.routineId],
     references: [workoutRoutines.id]
