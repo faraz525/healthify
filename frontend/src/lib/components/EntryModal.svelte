@@ -56,14 +56,16 @@
         workoutType = existingEntry.workoutType || null;
         workoutNotes = existingEntry.workoutNotes || '';
         notes = existingEntry.notes || '';
-        healthIssues = existingEntry.healthIssues.map(i => ({
+        const mappedIssues = existingEntry.healthIssues.map(i => ({
           issueType: i.issueType,
           severity: i.severity,
           notes: i.notes,
           timeOfDay: i.timeOfDay
         }));
+        healthIssues = mappedIssues;
         // Auto-expand health details if there's existing health data
-        healthDetailsExpanded = !!(stressLevel || notes || healthIssues.length > 0);
+        // Use existingEntry values directly to avoid reading from state we just set
+        healthDetailsExpanded = !!(existingEntry.stressLevel || existingEntry.notes || existingEntry.healthIssues.length > 0);
       } else {
         stressLevel = null;
         workedOut = false;
