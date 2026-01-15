@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { enhance, deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
 
   interface Exercise {
@@ -87,6 +87,9 @@
 
   let sessionWeights = $state<Record<number, string>>({});
 
+  // Track which routine is expanded (null = all collapsed)
+  let expandedWorkoutId = $state<number | null>(null);
+
   let selectedHistoryExercise = $state<{ id: number; name: string } | null>(null);
   let exerciseHistoryData = $state<Array<{
     id: number;
@@ -121,8 +124,8 @@
     return Math.round((min + max) / 2);
   }
 
-  function handleQuickLog(exerciseId: number, exerciseName: string, targetWeight: string | null | undefined, targetReps: string | null | undefined, exerciseLogs: ExerciseLog[]) {
-    const weight = getSessionWeight(exerciseId, exerciseLogs, targetWeight);
+  function handleQuickLog(exerciseId: number, exerciseName: string, targetWeight: string | null | undefined, targetReps: string | null | undefined, targetSets: number | null | undefined, exerciseLogs: ExerciseLog[]) {
+    const weight = getSessionWeight(exerciseId, exerciseLogs, targetWeight, targetSets);
     const reps = parseTargetReps(targetReps);
     handleLogSet(exerciseId, exerciseName, getNextSetNumber(exerciseId), weight, reps);
   }
@@ -184,18 +187,87 @@
     }
   }
 
-  function getSessionWeight(exerciseId: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined): string {
+  // Parse targetWeight into per-set array
+  // Supports: "185" (single), "185,195,205" (per-set), "[185,195,205]" (JSON array)
+  function parseSetWeights(targetWeight: string | null | undefined, numSets: number): string[] {
+    if (!targetWeight) return Array(numSets).fill('');
+
+    // Try parsing as JSON array first
+    if (targetWeight.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(targetWeight);
+        if (Array.isArray(parsed)) {
+          // Pad or trim to match numSets
+          const result = parsed.map(w => String(w ?? ''));
+          while (result.length < numSets) result.push(result[result.length - 1] || '');
+          return result.slice(0, numSets);
+        }
+      } catch { /* not valid JSON */ }
+    }
+
+    // Try parsing as comma-separated
+    if (targetWeight.includes(',')) {
+      const parts = targetWeight.split(',').map(s => s.trim());
+      while (parts.length < numSets) parts.push(parts[parts.length - 1] || '');
+      return parts.slice(0, numSets);
+    }
+
+    // Single value - apply to all sets
+    return Array(numSets).fill(targetWeight);
+  }
+
+  // Convert set weights array back to storage format
+  function serializeSetWeights(weights: string[]): string | null {
+    const filtered = weights.filter(w => w !== '');
+    if (filtered.length === 0) return null;
+
+    // If all weights are the same, store as single value
+    const unique = [...new Set(filtered)];
+    if (unique.length === 1) return unique[0];
+
+    // Otherwise store as comma-separated
+    return weights.join(',');
+  }
+
+  function adjustSetWeight(exercise: Exercise, setIndex: number, delta: number, currentWeights: string[]) {
+    const currentWeight = currentWeights[setIndex] || '0';
+    const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
+    const numericWeight = match ? parseFloat(match[1]) : 0;
+    const newWeight = Math.max(0, numericWeight + delta);
+
+    const newWeights = [...currentWeights];
+    newWeights[setIndex] = newWeight > 0 ? `${newWeight}` : '';
+
+    if (exercise.id) {
+      handleUpdateExercise(exercise.id, 'targetWeight', serializeSetWeights(newWeights));
+    }
+  }
+
+  function updateSetWeight(exercise: Exercise, setIndex: number, value: string, currentWeights: string[]) {
+    const newWeights = [...currentWeights];
+    newWeights[setIndex] = value;
+
+    if (exercise.id) {
+      handleUpdateExercise(exercise.id, 'targetWeight', serializeSetWeights(newWeights));
+    }
+  }
+
+  function getSessionWeight(exerciseId: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined, targetSets: number | null | undefined): string {
     if (sessionWeights[exerciseId] !== undefined) {
       return sessionWeights[exerciseId];
     }
+    // Use last logged weight if available
     if (exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].weight) {
       return exerciseLogs[exerciseLogs.length - 1].weight!;
     }
-    return targetWeight ?? '';
+    // Use per-set target weight for the next set
+    const nextSetIndex = exerciseLogs.length;
+    const setWeights = parseSetWeights(targetWeight, targetSets ?? 3);
+    return setWeights[nextSetIndex] || setWeights[0] || '';
   }
 
-  function adjustSessionWeight(exerciseId: number, delta: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined) {
-    const currentWeight = getSessionWeight(exerciseId, exerciseLogs, targetWeight);
+  function adjustSessionWeight(exerciseId: number, delta: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined, targetSets: number | null | undefined) {
+    const currentWeight = getSessionWeight(exerciseId, exerciseLogs, targetWeight, targetSets);
     const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
     const numericWeight = match ? parseFloat(match[1]) : 0;
     const newWeight = Math.max(0, numericWeight + delta);
@@ -249,7 +321,7 @@
     formData.set('exerciseId', exerciseId.toString());
     formData.set('limit', '30');
     const response = await fetch('?/getExerciseHistory', { method: 'POST', body: formData });
-    const result = await response.json();
+    const result = deserialize(await response.text());
     if (result.type === 'success' && result.data?.history) {
       exerciseHistoryData = result.data.history;
     } else {
@@ -531,7 +603,7 @@
                   <form class="flex flex-wrap items-center gap-2 pt-3 border-t border-dashed border-(--color-border-light)" onsubmit={(e) => {
                     e.preventDefault();
                     const form = e.target as HTMLFormElement;
-                    const weight = getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight);
+                    const weight = getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets);
                     const reps = parseInt((form.elements.namedItem('reps') as HTMLInputElement).value);
                     if (reps) {
                       handleLogSet(exercise.id!, exercise.name, getNextSetNumber(exercise.id!), weight, reps);
@@ -540,14 +612,14 @@
                   }}>
                     <span class="text-sm font-semibold text-(--color-text-muted) w-14">Set {getNextSetNumber(exercise.id!)}</span>
                     <div class="flex items-center gap-1">
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, -5, exerciseLogs, exercise.targetWeight)}>-5</button>
-                      <input type="text" name="weight" class="w-20 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight)} oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)} />
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight)}>+5</button>
+                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, -5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>-5</button>
+                      <input type="text" name="weight" class="w-20 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets)} oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)} />
+                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>+5</button>
                     </div>
                     <input type="number" name="reps" placeholder="Reps" class="w-16 h-10 px-2 text-center font-medium bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" min="1" />
                     <button type="submit" class="h-10 px-4 bg-(--color-primary) text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all active:scale-95">Log</button>
                     {#if exercise.targetWeight || exercise.targetReps}
-                      <button type="button" class="h-10 px-4 bg-(--color-success)/15 text-(--color-success) font-semibold rounded-xl border border-(--color-success)/40 hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => handleQuickLog(exercise.id!, exercise.name, exercise.targetWeight, exercise.targetReps, exerciseLogs)}>Quick</button>
+                      <button type="button" class="h-10 px-4 bg-(--color-success)/15 text-(--color-success) font-semibold rounded-xl border border-(--color-success)/40 hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => handleQuickLog(exercise.id!, exercise.name, exercise.targetWeight, exercise.targetReps, exercise.targetSets, exerciseLogs)}>Quick</button>
                     {/if}
                   </form>
                 {/if}
@@ -744,84 +816,148 @@
           <button class="btn btn-primary" onclick={() => showCreateModal = true}>Create Workout</button>
         </div>
       {:else}
-        <div class="space-y-4">
+        <div class="space-y-3">
           {#each [...workouts].sort((a, b) => a.sortOrder - b.sortOrder) as workout}
-            <div class="bg-(--color-bg-card) rounded-2xl border border-(--color-border-light) shadow-sm overflow-hidden">
-              <div class="p-4 sm:p-5 border-b border-(--color-border-light) flex items-start justify-between gap-3">
+            {@const isExpanded = expandedWorkoutId === workout.id}
+            <div class="bg-(--color-bg-card) rounded-2xl border border-(--color-border-light) shadow-sm overflow-hidden {isExpanded ? 'ring-2 ring-(--color-primary)/30' : ''}">
+              <!-- Collapsible Header -->
+              <button
+                type="button"
+                class="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-(--color-bg-hover)/50 transition-colors"
+                onclick={() => expandedWorkoutId = isExpanded ? null : workout.id!}
+              >
                 <div class="flex-1 min-w-0">
-                  <select
-                    class="px-2.5 py-1 bg-(--color-bg) border border-(--color-border) rounded-lg text-xs font-semibold cursor-pointer focus:outline-none focus:border-(--color-primary) mb-2"
-                    value={workout.dayOfWeek ?? ''}
-                    onchange={(e) => handleUpdateWorkout(workout.id!, 'dayOfWeek', (e.target as HTMLSelectElement).value === '' ? null : parseInt((e.target as HTMLSelectElement).value))}
-                  >
-                    <option value="">Flexible</option>
-                    {#each dayNames as name, i}<option value={i}>{name}</option>{/each}
-                  </select>
-                  <input
-                    type="text"
-                    class="block w-full text-xl font-bold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
-                    value={workout.name}
-                    onblur={(e) => handleUpdateWorkout(workout.id!, 'name', (e.target as HTMLInputElement).value)}
-                  />
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="px-2 py-0.5 bg-(--color-bg) border border-(--color-border) rounded text-xs font-semibold text-(--color-text-muted)">{getDayName(workout.dayOfWeek)}</span>
+                  </div>
+                  <h3 class="text-lg font-bold text-(--color-text) truncate">{workout.name}</h3>
+                  <p class="text-sm text-(--color-text-muted)">{workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}</p>
                 </div>
-                <button class="w-10 h-10 flex items-center justify-center rounded-xl text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors" onclick={() => handleDeleteWorkout(workout.id!)}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                </button>
-              </div>
+                <div class="flex items-center gap-2">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="text-(--color-text-muted) transition-transform duration-200 {isExpanded ? 'rotate-180' : ''}"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+              </button>
 
-              <div class="p-3 sm:p-4 space-y-2">
-                {#each [...workout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
-                  <div class="p-3 sm:p-4 bg-(--color-bg) rounded-xl">
-                    <div class="flex items-center gap-2 mb-3">
+              <!-- Expanded Content -->
+              {#if isExpanded}
+                <div class="border-t border-(--color-border-light)">
+                  <!-- Editable Header -->
+                  <div class="p-4 sm:p-5 bg-(--color-bg-hover)/30 flex items-start justify-between gap-3">
+                    <div class="flex-1 min-w-0">
+                      <select
+                        class="px-2.5 py-1 bg-(--color-bg) border border-(--color-border) rounded-lg text-xs font-semibold cursor-pointer focus:outline-none focus:border-(--color-primary) mb-2"
+                        value={workout.dayOfWeek ?? ''}
+                        onchange={(e) => handleUpdateWorkout(workout.id!, 'dayOfWeek', (e.target as HTMLSelectElement).value === '' ? null : parseInt((e.target as HTMLSelectElement).value))}
+                        onclick={(e) => e.stopPropagation()}
+                      >
+                        <option value="">Flexible</option>
+                        {#each dayNames as name, i}<option value={i}>{name}</option>{/each}
+                      </select>
                       <input
                         type="text"
-                        class="flex-1 font-semibold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
-                        value={exercise.name}
-                        onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
+                        class="block w-full text-xl font-bold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
+                        value={workout.name}
+                        onblur={(e) => handleUpdateWorkout(workout.id!, 'name', (e.target as HTMLInputElement).value)}
+                        onclick={(e) => e.stopPropagation()}
                       />
-                      <button class="w-8 h-8 flex items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors" onclick={() => handleDeleteExercise(exercise.id!)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                      </button>
                     </div>
-                    <div class="grid grid-cols-3 gap-2">
-                      <div>
-                        <label class="block text-xs font-medium text-(--color-text-muted) mb-1">Sets</label>
-                        <input
-                          type="number"
-                          class="w-full px-3 py-2 text-center font-medium bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
-                          value={exercise.targetSets ?? ''}
-                          onblur={(e) => handleUpdateExercise(exercise.id!, 'targetSets', parseInt((e.target as HTMLInputElement).value) || null)}
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-xs font-medium text-(--color-text-muted) mb-1">Reps</label>
-                        <input
-                          type="text"
-                          class="w-full px-3 py-2 text-center font-medium bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
-                          value={exercise.targetReps ?? ''}
-                          placeholder="8-12"
-                          onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
-                        />
-                      </div>
-                      <div>
-                        <label class="block text-xs font-medium text-(--color-text-muted) mb-1">Weight</label>
-                        <div class="flex items-center gap-1">
-                          <button type="button" class="w-7 h-9 flex items-center justify-center rounded-lg text-xs font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all shrink-0" onclick={() => adjustWeight(exercise, -5)}>-</button>
+                    <button
+                      class="w-10 h-10 flex items-center justify-center rounded-xl text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors"
+                      onclick={(e) => { e.stopPropagation(); handleDeleteWorkout(workout.id!); }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                    </button>
+                  </div>
+
+                  <!-- Exercises -->
+                  <div class="p-3 sm:p-4 space-y-3">
+                    {#each [...workout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+                      {@const targetSets = exercise.targetSets ?? 3}
+                      {@const setWeights = parseSetWeights(exercise.targetWeight, targetSets)}
+                      <div class="p-4 sm:p-5 bg-(--color-bg) rounded-xl">
+                        <!-- Exercise Name Row -->
+                        <div class="flex items-center gap-2 mb-4">
                           <input
                             type="text"
-                            class="flex-1 min-w-0 px-2 py-2 text-center font-medium bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
-                            value={exercise.targetWeight ?? ''}
-                            placeholder="135"
-                            onblur={(e) => handleUpdateExercise(exercise.id!, 'targetWeight', (e.target as HTMLInputElement).value || null)}
+                            class="flex-1 text-lg font-bold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
+                            value={exercise.name}
+                            onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
                           />
-                          <button type="button" class="w-7 h-9 flex items-center justify-center rounded-lg text-xs font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all shrink-0" onclick={() => adjustWeight(exercise, 5)}>+</button>
+                          <button class="w-9 h-9 flex items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors" onclick={() => handleDeleteExercise(exercise.id!)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+
+                        <!-- Sets & Reps Row -->
+                        <div class="flex items-center gap-4 mb-4">
+                          <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-(--color-text-muted)">Sets</label>
+                            <input
+                              type="number"
+                              class="w-14 px-2 py-1.5 text-center font-semibold bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
+                              value={exercise.targetSets ?? ''}
+                              min="1"
+                              max="10"
+                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetSets', parseInt((e.target as HTMLInputElement).value) || null)}
+                            />
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-(--color-text-muted)">Reps</label>
+                            <input
+                              type="text"
+                              class="w-16 px-2 py-1.5 text-center font-semibold bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
+                              value={exercise.targetReps ?? ''}
+                              placeholder="8-12"
+                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
+                            />
+                          </div>
+                        </div>
+
+                        <!-- Weight Per Set -->
+                        <div class="space-y-2">
+                          <label class="block text-sm font-semibold text-(--color-text)">Target Weight per Set</label>
+                          <div class="flex flex-wrap gap-2">
+                            {#each Array(targetSets) as _, setIndex}
+                              <div class="flex items-center gap-1.5 p-2 bg-(--color-bg-card) rounded-xl border border-(--color-border-light)">
+                                <span class="text-xs font-bold text-(--color-text-muted) w-5">#{setIndex + 1}</span>
+                                <button
+                                  type="button"
+                                  class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95"
+                                  onclick={() => adjustSetWeight(exercise, setIndex, -5, setWeights)}
+                                >-</button>
+                                <input
+                                  type="text"
+                                  class="w-16 h-8 px-1 text-center text-lg font-bold bg-transparent border-none focus:outline-none text-(--color-primary)"
+                                  value={setWeights[setIndex] ?? ''}
+                                  placeholder="—"
+                                  oninput={(e) => updateSetWeight(exercise, setIndex, (e.target as HTMLInputElement).value, setWeights)}
+                                />
+                                <button
+                                  type="button"
+                                  class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95"
+                                  onclick={() => adjustSetWeight(exercise, setIndex, 5, setWeights)}
+                                >+</button>
+                              </div>
+                            {/each}
+                          </div>
+                          <p class="text-xs text-(--color-text-muted)">Set target weights for each set, or leave empty to use same weight</p>
                         </div>
                       </div>
-                    </div>
+                    {/each}
+                    <button class="w-full py-3.5 text-sm font-semibold text-(--color-primary) bg-(--color-primary)/10 rounded-xl hover:bg-(--color-primary)/20 transition-all" onclick={() => handleAddExercise(workout.id!)}>+ Add Exercise</button>
                   </div>
-                {/each}
-                <button class="w-full py-3 text-sm font-semibold text-(--color-primary) bg-(--color-primary)/10 rounded-xl hover:bg-(--color-primary)/20 transition-all" onclick={() => handleAddExercise(workout.id!)}>+ Add Exercise</button>
-              </div>
+                </div>
+              {/if}
             </div>
           {/each}
         </div>

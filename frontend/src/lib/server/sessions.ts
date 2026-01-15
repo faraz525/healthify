@@ -394,25 +394,43 @@ export function getSessionPRs(userId: string, sessionId: number) {
 
 // Get exercise history for a specific exercise
 export function getExerciseHistory(userId: string, exerciseId: number, limit = 10) {
-  // Verify exercise belongs to user's workout
-  const exercise = db.query.exercises.findFirst({
-    where: eq(exercises.id, exerciseId),
-    with: { workoutDay: { with: { routine: true } } }
-  }).sync();
+  try {
+    // Verify exercise belongs to user's workout
+    const exercise = db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId),
+      with: { workoutDay: { with: { routine: true } } }
+    }).sync();
 
-  if (!exercise) return [];
+    if (!exercise) {
+      console.log('getExerciseHistory: exercise not found', exerciseId);
+      return [];
+    }
 
-  const workout = exercise.workoutDay;
-  if (workout.userId !== userId && (!workout.routine || workout.routine.userId !== userId)) {
+    const workout = exercise.workoutDay;
+    if (workout.userId !== userId && (!workout.routine || workout.routine.userId !== userId)) {
+      console.log('getExerciseHistory: user does not own exercise', { exerciseId, userId, workoutUserId: workout.userId });
+      return [];
+    }
+
+    // Get all logs for this exercise, then filter by completed sessions
+    const allLogs = db.query.exerciseLogs.findMany({
+      where: eq(exerciseLogs.exerciseId, exerciseId),
+      orderBy: [desc(exerciseLogs.completedAt)],
+      with: { session: true }
+    }).sync();
+
+    // Filter to only completed sessions and apply limit
+    const completedLogs = allLogs
+      .filter(log => log.session?.status === 'completed')
+      .slice(0, limit);
+
+    console.log('getExerciseHistory:', { exerciseId, totalLogs: allLogs.length, completedLogs: completedLogs.length });
+
+    return completedLogs;
+  } catch (err) {
+    console.error('getExerciseHistory error:', err);
     return [];
   }
-
-  return db.query.exerciseLogs.findMany({
-    where: eq(exerciseLogs.exerciseId, exerciseId),
-    orderBy: [desc(exerciseLogs.completedAt)],
-    limit,
-    with: { session: true }
-  }).sync();
 }
 
 // Get logs for a specific exercise within a session

@@ -23,12 +23,14 @@
   };
 </script>
 
-<div class="card flex items-center gap-4 p-6">
-  {#if icon}
-    <span class="text-3xl w-14 h-14 flex items-center justify-center rounded-xl {bgColorMap[color]}">{iconMap[icon] || icon}</span>
-  {/if}
-  <div class="flex flex-col gap-1 min-w-0 overflow-hidden">
-    <span class="font-(family-name:--font-display) text-3xl font-semibold text-(--color-text) leading-none overflow-hidden text-ellipsis whitespace-nowrap">{value}</span>
-    <span class="text-sm text-(--color-text-muted) overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+<div class="bg-(--color-bg-card) rounded-2xl border border-(--color-border-light) shadow-sm p-3 sm:p-4">
+  <div class="flex items-center gap-3">
+    {#if icon}
+      <span class="text-xl sm:text-2xl w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl {bgColorMap[color]} shrink-0">{iconMap[icon] || icon}</span>
+    {/if}
+    <div class="flex flex-col min-w-0">
+      <span class="font-(family-name:--font-display) text-xl sm:text-2xl font-bold text-(--color-text) leading-tight truncate">{value}</span>
+      <span class="text-xs sm:text-sm text-(--color-text-muted) truncate">{label}</span>
+    </div>
   </div>
 </div>
