@@ -39,12 +39,23 @@
   let saving = $state(false);
   let healthDetailsExpanded = $state(false);
 
-  // Get workout routines from page data
+  // Get workout days from page data - combine days from routines AND standalone workouts
   let routineDays = $derived.by(() => {
-    const pageData = $page.data as { workoutRoutines?: Array<{ days: WorkoutDay[], isActive: boolean | null }> };
+    const pageData = $page.data as {
+      workoutRoutines?: Array<{ days: WorkoutDay[], isActive: boolean | null }>,
+      workouts?: WorkoutDay[]
+    };
     const routines = pageData.workoutRoutines || [];
-    const activeRoutine = routines.find(r => r.isActive) || routines[0];
-    return activeRoutine?.days || [];
+    const standaloneWorkouts = pageData.workouts || [];
+
+    // Combine days from all routines
+    const routineDaysList = routines.flatMap(r => r.days || []);
+
+    // Combine with standalone workouts, avoiding duplicates by id
+    const routineIds = new Set(routineDaysList.map(d => d.id));
+    const uniqueStandalone = standaloneWorkouts.filter(w => !routineIds.has(w.id));
+
+    return [...routineDaysList, ...uniqueStandalone];
   });
 
   // Reset form when date changes
@@ -186,7 +197,7 @@
       </section>
 
       <!-- Collapsible Health Details Section -->
-      <section class="border border-(--color-border-light) rounded-2xl overflow-hidden">
+      <section class="border border-(--color-border-light) rounded-2xl">
         <button
           type="button"
           class="w-full flex items-center justify-between px-5 py-4 bg-(--color-bg) border-none cursor-pointer transition-colors duration-150 hover:bg-(--color-bg-hover)"

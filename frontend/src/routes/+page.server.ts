@@ -8,7 +8,8 @@ import {
   deleteWorkout,
   createExercise,
   updateExercise,
-  deleteExercise
+  deleteExercise,
+  reorderExercise
 } from '$lib/server/workouts';
 import {
   getActiveSession,
@@ -186,6 +187,26 @@ export const actions: Actions = {
     const deleted = deleteExercise(userId, exerciseId);
     if (!deleted) {
       return fail(404, { error: 'Exercise not found' });
+    }
+
+    return { success: true };
+  },
+
+  reorderExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
+    const formData = await request.formData();
+    const exerciseId = parseInt(formData.get('exerciseId') as string);
+    const direction = formData.get('direction') as 'up' | 'down';
+
+    if (!exerciseId || !direction || !['up', 'down'].includes(direction)) {
+      return fail(400, { error: 'Exercise ID and valid direction (up/down) are required' });
+    }
+
+    const reordered = reorderExercise(userId, exerciseId, direction);
+    if (!reordered) {
+      return fail(400, { error: 'Could not reorder exercise' });
     }
 
     return { success: true };

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance, deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import WeightChart from '$lib/components/WeightChart.svelte';
 
   interface Exercise {
     id?: number;
@@ -86,6 +87,7 @@
   let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   let sessionWeights = $state<Record<number, string>>({});
+  let sessionReps = $state<Record<number, number>>({});
 
   // Track which routine is expanded (null = all collapsed)
   let expandedWorkoutId = $state<number | null>(null);
@@ -278,10 +280,51 @@
     sessionWeights[exerciseId] = value;
   }
 
+  function getSessionReps(exerciseId: number, exerciseLogs: ExerciseLog[], targetReps: string | null | undefined): number {
+    if (sessionReps[exerciseId] !== undefined) {
+      return sessionReps[exerciseId];
+    }
+    // Use last logged reps if available
+    if (exerciseLogs.length > 0 && exerciseLogs[exerciseLogs.length - 1].reps) {
+      return exerciseLogs[exerciseLogs.length - 1].reps!;
+    }
+    // Use target reps
+    return parseTargetReps(targetReps);
+  }
+
+  function adjustSessionReps(exerciseId: number, delta: number, exerciseLogs: ExerciseLog[], targetReps: string | null | undefined) {
+    const currentReps = getSessionReps(exerciseId, exerciseLogs, targetReps);
+    const newReps = Math.max(1, currentReps + delta);
+    sessionReps[exerciseId] = newReps;
+  }
+
+  function updateSessionReps(exerciseId: number, value: number) {
+    sessionReps[exerciseId] = Math.max(1, value);
+  }
+
+  function adjustTargetReps(exercise: Exercise, delta: number) {
+    const currentReps = exercise.targetReps || '10';
+    // Parse the first number from the target reps (handles "8-12" format)
+    const match = currentReps.match(/^(\d+)/);
+    const numericReps = match ? parseInt(match[1]) : 10;
+    const newReps = Math.max(1, numericReps + delta);
+    if (exercise.id) {
+      handleUpdateExercise(exercise.id, 'targetReps', `${newReps}`);
+    }
+  }
+
   async function handleDeleteExercise(exerciseId: number) {
     const formData = new FormData();
     formData.set('exerciseId', exerciseId.toString());
     await fetch('?/deleteExercise', { method: 'POST', body: formData });
+    await invalidateAll();
+  }
+
+  async function handleReorderExercise(exerciseId: number, direction: 'up' | 'down') {
+    const formData = new FormData();
+    formData.set('exerciseId', exerciseId.toString());
+    formData.set('direction', direction);
+    await fetch('?/reorderExercise', { method: 'POST', body: formData });
     await invalidateAll();
   }
 
@@ -602,12 +645,10 @@
                 {#if !isComplete || !exercise.targetSets}
                   <form class="flex flex-wrap items-center gap-2 pt-3 border-t border-dashed border-(--color-border-light)" onsubmit={(e) => {
                     e.preventDefault();
-                    const form = e.target as HTMLFormElement;
                     const weight = getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets);
-                    const reps = parseInt((form.elements.namedItem('reps') as HTMLInputElement).value);
+                    const reps = getSessionReps(exercise.id!, exerciseLogs, exercise.targetReps);
                     if (reps) {
                       handleLogSet(exercise.id!, exercise.name, getNextSetNumber(exercise.id!), weight, reps);
-                      (form.elements.namedItem('reps') as HTMLInputElement).value = '';
                     }
                   }}>
                     <span class="text-sm font-semibold text-(--color-text-muted) w-14">Set {getNextSetNumber(exercise.id!)}</span>
@@ -616,7 +657,11 @@
                       <input type="text" name="weight" class="w-20 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets)} oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)} />
                       <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>+5</button>
                     </div>
-                    <input type="number" name="reps" placeholder="Reps" class="w-16 h-10 px-2 text-center font-medium bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" min="1" />
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionReps(exercise.id!, -1, exerciseLogs, exercise.targetReps)}>-1</button>
+                      <input type="number" name="reps" class="w-14 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" min="1" value={getSessionReps(exercise.id!, exerciseLogs, exercise.targetReps)} oninput={(e) => updateSessionReps(exercise.id!, parseInt((e.target as HTMLInputElement).value) || 1)} />
+                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionReps(exercise.id!, 1, exerciseLogs, exercise.targetReps)}>+1</button>
+                    </div>
                     <button type="submit" class="h-10 px-4 bg-(--color-primary) text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all active:scale-95">Log</button>
                     {#if exercise.targetWeight || exercise.targetReps}
                       <button type="button" class="h-10 px-4 bg-(--color-success)/15 text-(--color-success) font-semibold rounded-xl border border-(--color-success)/40 hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => handleQuickLog(exercise.id!, exercise.name, exercise.targetWeight, exercise.targetReps, exercise.targetSets, exerciseLogs)}>Quick</button>
@@ -881,12 +926,36 @@
 
                   <!-- Exercises -->
                   <div class="p-3 sm:p-4 space-y-3">
-                    {#each [...workout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise}
+                    {#each [...workout.exercises].sort((a, b) => a.sortOrder - b.sortOrder) as exercise, exerciseIndex (exercise.id)}
+                      {@const sortedExercisesLen = workout.exercises.length}
                       {@const targetSets = exercise.targetSets ?? 3}
                       {@const setWeights = parseSetWeights(exercise.targetWeight, targetSets)}
+                      {@const isFirst = exerciseIndex === 0}
+                      {@const isLast = exerciseIndex === sortedExercisesLen - 1}
                       <div class="p-4 sm:p-5 bg-(--color-bg) rounded-xl">
                         <!-- Exercise Name Row -->
                         <div class="flex items-center gap-2 mb-4">
+                          <!-- Reorder buttons -->
+                          <div class="flex flex-col gap-0.5">
+                            <button
+                              type="button"
+                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all active:scale-95 {isFirst ? 'opacity-30 cursor-not-allowed bg-(--color-bg-card) text-(--color-text-muted)' : 'bg-(--color-primary)/15 text-(--color-primary) hover:bg-(--color-primary) hover:text-white'}"
+                              onclick={() => !isFirst && handleReorderExercise(exercise.id!, 'up')}
+                              disabled={isFirst}
+                              title="Move up"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                            </button>
+                            <button
+                              type="button"
+                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all active:scale-95 {isLast ? 'opacity-30 cursor-not-allowed bg-(--color-bg-card) text-(--color-text-muted)' : 'bg-(--color-primary)/15 text-(--color-primary) hover:bg-(--color-primary) hover:text-white'}"
+                              onclick={() => !isLast && handleReorderExercise(exercise.id!, 'down')}
+                              disabled={isLast}
+                              title="Move down"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                          </div>
                           <input
                             type="text"
                             class="flex-1 text-lg font-bold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
@@ -913,13 +982,23 @@
                           </div>
                           <div class="flex items-center gap-2">
                             <label class="text-sm font-medium text-(--color-text-muted)">Reps</label>
+                            <button
+                              type="button"
+                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95"
+                              onclick={() => adjustTargetReps(exercise, -1)}
+                            >-</button>
                             <input
                               type="text"
-                              class="w-16 px-2 py-1.5 text-center font-semibold bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
+                              class="w-14 px-2 py-1.5 text-center font-semibold bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
                               value={exercise.targetReps ?? ''}
                               placeholder="8-12"
                               onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
                             />
+                            <button
+                              type="button"
+                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95"
+                              onclick={() => adjustTargetReps(exercise, 1)}
+                            >+</button>
                           </div>
                         </div>
 
@@ -1018,6 +1097,13 @@
                 <p class="text-sm mt-1">Start a workout to track your progress!</p>
               </div>
             {:else}
+              <!-- Weight Progression Chart -->
+              <div class="mb-6 p-4 bg-(--color-bg) rounded-xl">
+                <h4 class="text-xs font-bold text-(--color-text-muted) uppercase tracking-wide mb-3">Weight Progress</h4>
+                <WeightChart data={exerciseHistoryData} />
+              </div>
+
+              <!-- History by Date -->
               <div class="space-y-4">
                 {#each groupHistoryByDate(exerciseHistoryData) as [date, logs]}
                   <div class="p-4 bg-(--color-bg) rounded-xl">

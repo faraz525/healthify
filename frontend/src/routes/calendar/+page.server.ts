@@ -2,7 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getEntries, getEntryByDate, createEntry, updateEntry, deleteEntry, getTodayEntry } from '$lib/server/entries';
 import { getStats } from '$lib/server/stats';
-import { getWorkoutRoutines } from '$lib/server/workouts';
+import { getWorkoutRoutines, getWorkouts } from '$lib/server/workouts';
 
 export const load: PageServerLoad = async ({ parent, locals }) => {
   // Get entries from layout (already loaded for all pages)
@@ -13,7 +13,8 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
       entries: [],
       todayEntry: null,
       stats: null,
-      workoutRoutines: []
+      workoutRoutines: [],
+      workouts: []
     };
   }
 
@@ -23,12 +24,15 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 
   // Get workout routines for the EntryModal workout type selector
   const workoutRoutines = getWorkoutRoutines(userId, true);
+  // Also get standalone workouts (workoutDays with userId but no routineId)
+  const workouts = getWorkouts(userId);
 
   return {
     entries: parentData.entries,
     todayEntry,
     stats,
-    workoutRoutines
+    workoutRoutines,
+    workouts
   };
 };
 

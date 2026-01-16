@@ -483,3 +483,56 @@ export function deleteExercise(userId: string, exerciseId: number) {
     return false;
   }
 }
+
+export function reorderExercise(userId: string, exerciseId: number, direction: 'up' | 'down') {
+  try {
+    // Get the exercise and verify ownership
+    const exercise = db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId),
+      with: { workoutDay: true }
+    }).sync();
+
+    if (!exercise) return false;
+
+    const workout = getWorkout(userId, exercise.workoutDayId);
+    if (!workout) return false;
+
+    // Get all exercises in the workout sorted by sortOrder
+    const allExercises = db.query.exercises.findMany({
+      where: eq(exercises.workoutDayId, exercise.workoutDayId),
+      orderBy: [asc(exercises.sortOrder)]
+    }).sync();
+
+    // Find the current exercise index
+    const currentIndex = allExercises.findIndex(e => e.id === exerciseId);
+    if (currentIndex === -1) return false;
+
+    // Determine the swap target index
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    // Check bounds
+    if (targetIndex < 0 || targetIndex >= allExercises.length) return false;
+
+    const currentExercise = allExercises[currentIndex];
+    const targetExercise = allExercises[targetIndex];
+
+    // Swap sortOrder values using a transaction
+    const swapTx = sqlite.transaction(() => {
+      const tempOrder = currentExercise.sortOrder;
+      db.update(exercises)
+        .set({ sortOrder: targetExercise.sortOrder })
+        .where(eq(exercises.id, currentExercise.id))
+        .run();
+      db.update(exercises)
+        .set({ sortOrder: tempOrder })
+        .where(eq(exercises.id, targetExercise.id))
+        .run();
+    });
+
+    swapTx();
+    return true;
+  } catch (err) {
+    console.error('Failed to reorder exercise:', err);
+    return false;
+  }
+}
