@@ -155,6 +155,31 @@ Access via sqlite3:
 sqlite3 /mnt/ssd/apps/healthify/data/healthify.db
 ```
 
+## Versioning & Changelog
+
+This project uses [Semantic Versioning](https://semver.org/) and maintains a [CHANGELOG.md](./CHANGELOG.md) following [Keep a Changelog](https://keepachangelog.com/) format.
+
+### Creating a Release
+```bash
+# 1. Update CHANGELOG.md - move items from [Unreleased] to new version
+# 2. Commit the changelog
+git add CHANGELOG.md
+git commit -m "Release vX.Y.Z"
+
+# 3. Tag the release
+git tag vX.Y.Z
+
+# 4. Push everything
+git push && git push --tags
+```
+
+### Version Guidelines
+- **MAJOR** (1.0.0): Breaking changes or major milestones
+- **MINOR** (0.X.0): New features, significant improvements
+- **PATCH** (0.0.X): Bug fixes, minor tweaks
+
+Current version: See latest tag with `git describe --tags --abbrev=0`
+
 ## Production (Raspberry Pi)
 
 - **URL**: https://healthify.farazws.com
