@@ -6,11 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-- Weight chart component (in progress)
+## [0.4.0] - 2026-01-16
 
-### Changed
-- Entry modal improvements (in progress)
+### Added
+- Weight progression chart in exercise history view (SVG line chart)
+- Touch-friendly reps stepper buttons (+/-) for target reps in exercise constructor
+- Touch-friendly reps stepper buttons (+/-) for actual reps in workout tracker
+- Exercise reorder functionality with up/down arrow buttons
+
+### Fixed
+- Calendar view not showing workouts (now combines routines and standalone workouts)
+- Health Details section collapsing to 2px due to overflow-hidden CSS bug
+- EntryModal now properly loads both workoutRoutines and standalone workouts
 
 ## [0.3.0] - 2026-01-15
 
