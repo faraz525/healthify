@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Exercise linking across routines - linked exercises sync weights automatically
+- Import Existing modal with "Linked" and "Copy Only" options
+- Link icon indicator on linked exercises with unlink functionality
+- Duplicate name validation for workouts and exercises (alerts user)
+
+### Fixed
+- Trash button when creating a routine now works (shows confirmation dialog)
+- X button on exercise now clears the name field instead of deleting (delete moved to trash icon)
+
 ## [0.4.0] - 2026-01-16
 
 ### Added

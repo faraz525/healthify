@@ -9,7 +9,9 @@ import {
   createExercise,
   updateExercise,
   deleteExercise,
-  reorderExercise
+  reorderExercise,
+  createLinkedExercise,
+  unlinkExercise
 } from '$lib/server/workouts';
 import {
   getActiveSession,
@@ -207,6 +209,45 @@ export const actions: Actions = {
     const reordered = reorderExercise(userId, exerciseId, direction);
     if (!reordered) {
       return fail(400, { error: 'Could not reorder exercise' });
+    }
+
+    return { success: true };
+  },
+
+  createLinkedExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
+    const formData = await request.formData();
+    const sourceExerciseId = parseInt(formData.get('sourceExerciseId') as string);
+    const targetDayId = parseInt(formData.get('targetDayId') as string);
+
+    if (!sourceExerciseId || !targetDayId) {
+      return fail(400, { error: 'Source exercise ID and target day ID are required' });
+    }
+
+    const exercise = createLinkedExercise(userId, sourceExerciseId, targetDayId);
+    if (!exercise) {
+      return fail(400, { error: 'Could not create linked exercise' });
+    }
+
+    return { success: true, exercise };
+  },
+
+  unlinkExercise: async ({ request, locals }) => {
+    if (!locals.user) return fail(401, { error: 'Not authenticated' });
+
+    const userId = locals.user.id;
+    const formData = await request.formData();
+    const exerciseId = parseInt(formData.get('exerciseId') as string);
+
+    if (!exerciseId) {
+      return fail(400, { error: 'Exercise ID is required' });
+    }
+
+    const unlinked = unlinkExercise(userId, exerciseId);
+    if (!unlinked) {
+      return fail(400, { error: 'Could not unlink exercise' });
     }
 
     return { success: true };

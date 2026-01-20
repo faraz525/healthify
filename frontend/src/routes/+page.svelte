@@ -12,6 +12,7 @@
     restSeconds?: number | null;
     notes?: string | null;
     sortOrder: number;
+    linkGroupId?: number | null;
   }
 
   interface Workout {
@@ -138,7 +139,29 @@
   let newExerciseReps = $state('8-12');
   let newExerciseWeight = $state('');
 
+  // For importing existing exercises
+  let showImportExerciseModal = $state(false);
+  let importTargetWorkoutId = $state<number | null>(null);
+
+  function isWorkoutNameDuplicate(name: string, excludeId?: number): boolean {
+    return workouts.some((w: Workout) => w.name.toLowerCase() === name.toLowerCase() && w.id !== excludeId);
+  }
+
+  function isExerciseNameDuplicateInWorkout(name: string, workoutId: number, excludeExerciseId?: number): boolean {
+    const workout = workouts.find((w: Workout) => w.id === workoutId);
+    if (!workout) return false;
+    return workout.exercises.some((e: Exercise) => e.name.toLowerCase() === name.toLowerCase() && e.id !== excludeExerciseId);
+  }
+
   async function handleUpdateWorkout(workoutId: number, field: string, value: string | number | null) {
+    // Validate unique name
+    if (field === 'name' && typeof value === 'string') {
+      if (isWorkoutNameDuplicate(value, workoutId)) {
+        alert(`A workout named "${value}" already exists. Please choose a different name.`);
+        await invalidateAll(); // Reset to original value
+        return;
+      }
+    }
     const formData = new FormData();
     formData.set('id', workoutId.toString());
     formData.set('data', JSON.stringify({ [field]: value }));
@@ -146,10 +169,12 @@
     await invalidateAll();
   }
 
-  async function handleDeleteWorkout(workoutId: number) {
+  async function handleDeleteWorkout(workoutId: number, workoutName: string) {
+    if (!confirm(`Delete "${workoutName}"? This will permanently remove this workout and all its exercises.`)) return;
     const formData = new FormData();
     formData.set('id', workoutId.toString());
     await fetch('?/deleteWorkout', { method: 'POST', body: formData });
+    expandedWorkoutId = null;
     await invalidateAll();
   }
 
@@ -168,7 +193,15 @@
     await invalidateAll();
   }
 
-  async function handleUpdateExercise(exerciseId: number, field: string, value: string | number | null) {
+  async function handleUpdateExercise(exerciseId: number, field: string, value: string | number | null, workoutId?: number) {
+    // Validate unique exercise name within workout
+    if (field === 'name' && typeof value === 'string' && workoutId) {
+      if (isExerciseNameDuplicateInWorkout(value, workoutId, exerciseId)) {
+        alert(`An exercise named "${value}" already exists in this workout. Please choose a different name.`);
+        await invalidateAll(); // Reset to original value
+        return;
+      }
+    }
     const formData = new FormData();
     formData.set('exerciseId', exerciseId.toString());
     formData.set('data', JSON.stringify({ [field]: value }));
@@ -383,6 +416,57 @@
       }
     }
     return exercises;
+  }
+
+  // Get unique exercises for import (deduplicated by name, keeping the most recent/complete one)
+  function getUniqueExercisesForImport(excludeWorkoutId?: number): Array<Exercise & { workoutName: string }> {
+    const exerciseMap = new Map<string, Exercise & { workoutName: string }>();
+    for (const workout of workouts) {
+      if (workout.id === excludeWorkoutId) continue;
+      for (const exercise of workout.exercises) {
+        const key = exercise.name.toLowerCase();
+        // Keep the one with more complete data (has weight)
+        const existing = exerciseMap.get(key);
+        if (!existing || (exercise.targetWeight && !existing.targetWeight)) {
+          exerciseMap.set(key, { ...exercise, workoutName: workout.name });
+        }
+      }
+    }
+    return Array.from(exerciseMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async function handleImportExercise(sourceExercise: Exercise, targetWorkoutId: number, linked: boolean) {
+    if (linked && sourceExercise.id) {
+      // Create a linked copy
+      const formData = new FormData();
+      formData.set('sourceExerciseId', sourceExercise.id.toString());
+      formData.set('targetDayId', targetWorkoutId.toString());
+      await fetch('?/createLinkedExercise', { method: 'POST', body: formData });
+    } else {
+      // Create an independent copy
+      const formData = new FormData();
+      formData.set('dayId', targetWorkoutId.toString());
+      formData.set('data', JSON.stringify({
+        name: sourceExercise.name,
+        targetSets: sourceExercise.targetSets,
+        targetReps: sourceExercise.targetReps,
+        targetWeight: sourceExercise.targetWeight,
+        restSeconds: sourceExercise.restSeconds,
+        notes: sourceExercise.notes,
+        sortOrder: 0
+      }));
+      await fetch('?/createExercise', { method: 'POST', body: formData });
+    }
+    await invalidateAll();
+    showImportExerciseModal = false;
+    importTargetWorkoutId = null;
+  }
+
+  async function handleUnlinkExercise(exerciseId: number) {
+    const formData = new FormData();
+    formData.set('exerciseId', exerciseId.toString());
+    await fetch('?/unlinkExercise', { method: 'POST', body: formData });
+    await invalidateAll();
   }
 
   function groupHistoryByDate(history: typeof exerciseHistoryData) {
@@ -918,7 +1002,8 @@
                     </div>
                     <button
                       class="w-10 h-10 flex items-center justify-center rounded-xl text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors"
-                      onclick={(e) => { e.stopPropagation(); handleDeleteWorkout(workout.id!); }}
+                      onclick={(e) => { e.stopPropagation(); handleDeleteWorkout(workout.id!, workout.name); }}
+                      title="Delete workout"
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                     </button>
@@ -956,14 +1041,51 @@
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
                             </button>
                           </div>
-                          <input
-                            type="text"
-                            class="flex-1 text-lg font-bold bg-transparent border-none p-0 focus:outline-none text-(--color-text)"
-                            value={exercise.name}
-                            onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value)}
-                          />
-                          <button class="w-9 h-9 flex items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors" onclick={() => handleDeleteExercise(exercise.id!)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                          <div class="flex-1 relative flex items-center">
+                            <input
+                              type="text"
+                              class="w-full text-lg font-bold bg-transparent border-none p-0 pr-8 focus:outline-none text-(--color-text)"
+                              value={exercise.name}
+                              onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value, workout.id)}
+                            />
+                            {#if exercise.name}
+                              <button
+                                type="button"
+                                class="absolute right-0 w-6 h-6 flex items-center justify-center rounded text-(--color-text-muted) hover:text-(--color-text) transition-colors"
+                                onclick={(e) => {
+                                  const input = (e.currentTarget as HTMLElement).previousElementSibling as HTMLInputElement;
+                                  input.value = '';
+                                  input.focus();
+                                }}
+                                title="Clear name"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                              </button>
+                            {/if}
+                          </div>
+                          {#if exercise.linkGroupId}
+                            <button
+                              class="w-9 h-9 flex items-center justify-center rounded-lg text-(--color-primary) bg-(--color-primary)/10 hover:bg-(--color-primary)/20 transition-colors"
+                              onclick={() => {
+                                if (confirm(`Unlink "${exercise.name}"? Weight changes will no longer sync with other workouts.`)) {
+                                  handleUnlinkExercise(exercise.id!);
+                                }
+                              }}
+                              title="Linked - click to unlink"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            </button>
+                          {/if}
+                          <button
+                            class="w-9 h-9 flex items-center justify-center rounded-lg text-(--color-text-muted) hover:bg-(--color-danger-light) hover:text-(--color-danger) transition-colors"
+                            onclick={() => {
+                              if (confirm(`Delete "${exercise.name}" from this workout?`)) {
+                                handleDeleteExercise(exercise.id!);
+                              }
+                            }}
+                            title="Delete exercise"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                           </button>
                         </div>
 
@@ -1033,7 +1155,12 @@
                         </div>
                       </div>
                     {/each}
-                    <button class="w-full py-3.5 text-sm font-semibold text-(--color-primary) bg-(--color-primary)/10 rounded-xl hover:bg-(--color-primary)/20 transition-all" onclick={() => handleAddExercise(workout.id!)}>+ Add Exercise</button>
+                    <div class="flex gap-2">
+                      <button class="flex-1 py-3.5 text-sm font-semibold text-(--color-primary) bg-(--color-primary)/10 rounded-xl hover:bg-(--color-primary)/20 transition-all" onclick={() => handleAddExercise(workout.id!)}>+ New Exercise</button>
+                      {#if getUniqueExercisesForImport(workout.id).length > 0}
+                        <button class="flex-1 py-3.5 text-sm font-semibold text-(--color-text-muted) bg-(--color-bg-hover) rounded-xl hover:bg-(--color-border-light) transition-all" onclick={() => { importTargetWorkoutId = workout.id!; showImportExerciseModal = true; }}>Import Existing</button>
+                      {/if}
+                    </div>
                   </div>
                 </div>
               {/if}
@@ -1210,6 +1337,56 @@
           <button type="submit" class="flex-1 py-3 font-semibold text-white bg-(--color-primary) rounded-xl shadow-md">Add</button>
         </div>
       </form>
+    </div>
+  </div>
+{/if}
+
+<!-- Import Exercise Modal -->
+{#if showImportExerciseModal && importTargetWorkoutId}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-100 p-0 sm:p-6" onclick={() => { showImportExerciseModal = false; importTargetWorkoutId = null; }}>
+    <div class="bg-(--color-bg-card) rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 w-full sm:max-w-lg max-h-[80vh] shadow-xl flex flex-col" onclick={(e) => e.stopPropagation()}>
+      <h2 class="text-2xl font-bold text-(--color-text) mb-2">Import Exercise</h2>
+      <p class="text-sm text-(--color-text-muted) mb-6">Select an exercise to add to this workout</p>
+
+      <div class="flex-1 overflow-y-auto space-y-3 mb-4">
+        {#each getUniqueExercisesForImport(importTargetWorkoutId) as exercise}
+          <div class="p-4 bg-(--color-bg) rounded-xl">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h4 class="font-bold text-(--color-text)">{exercise.name}</h4>
+                <p class="text-xs text-(--color-text-muted)">from {exercise.workoutName}</p>
+              </div>
+              <div class="text-right text-sm">
+                {#if exercise.targetSets}<span class="text-(--color-text-muted)">{exercise.targetSets} sets</span>{/if}
+                {#if exercise.targetWeight}<span class="ml-2 font-semibold text-(--color-primary)">{exercise.targetWeight}</span>{/if}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button
+                class="flex-1 py-2.5 px-3 text-sm font-semibold text-(--color-primary) bg-(--color-primary)/10 rounded-lg hover:bg-(--color-primary)/20 transition-all flex items-center justify-center gap-1.5"
+                onclick={() => handleImportExercise(exercise, importTargetWorkoutId!, true)}
+                title="Weights will sync across workouts"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                Linked
+              </button>
+              <button
+                class="flex-1 py-2.5 px-3 text-sm font-semibold text-(--color-text-muted) bg-(--color-bg-card) rounded-lg border border-(--color-border) hover:bg-(--color-bg-hover) transition-all"
+                onclick={() => handleImportExercise(exercise, importTargetWorkoutId!, false)}
+                title="Independent copy - changes won't sync"
+              >
+                Copy Only
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="pt-3 border-t border-(--color-border-light)">
+        <p class="text-xs text-(--color-text-muted) mb-3"><strong>Linked:</strong> Weight changes sync across all linked exercises. <strong>Copy Only:</strong> Independent - no syncing.</p>
+        <button type="button" class="w-full py-3 font-semibold text-(--color-text-muted) bg-(--color-bg) rounded-xl border border-(--color-border)" onclick={() => { showImportExerciseModal = false; importTargetWorkoutId = null; }}>Cancel</button>
+      </div>
     </div>
   </div>
 {/if}

@@ -407,6 +407,34 @@ export function deleteWorkoutDay(userId: string, dayId: number) {
 }
 
 // Exercise operations
+
+// Generate a new unique link group ID
+export function generateLinkGroupId(): number {
+  try {
+    const result = db.select({ maxId: exercises.linkGroupId })
+      .from(exercises)
+      .all();
+    const maxId = result.reduce((max, row) => Math.max(max, row.maxId ?? 0), 0);
+    return maxId + 1;
+  } catch (err) {
+    console.error('Failed to generate link group ID:', err);
+    return Date.now(); // Fallback to timestamp
+  }
+}
+
+// Get all exercises in a link group
+export function getLinkedExercises(linkGroupId: number) {
+  try {
+    return db.query.exercises.findMany({
+      where: eq(exercises.linkGroupId, linkGroupId),
+      with: { workoutDay: true }
+    }).sync();
+  } catch (err) {
+    console.error('Failed to get linked exercises:', err);
+    return [];
+  }
+}
+
 export function createExercise(userId: string, dayId: number, data: {
   name: string;
   targetSets?: number;
@@ -415,6 +443,7 @@ export function createExercise(userId: string, dayId: number, data: {
   restSeconds?: number;
   notes?: string;
   sortOrder?: number;
+  linkGroupId?: number;
 }) {
   try {
     const workout = getWorkout(userId, dayId);
@@ -423,13 +452,88 @@ export function createExercise(userId: string, dayId: number, data: {
     const result = db.insert(exercises).values({
       workoutDayId: dayId,
       ...data,
-      sortOrder: data.sortOrder ?? 0
+      sortOrder: data.sortOrder ?? 0,
+      linkGroupId: data.linkGroupId ?? null
     }).returning().all();
 
     return result[0] ?? null;
   } catch (err) {
     console.error('Failed to create exercise:', err);
     return null;
+  }
+}
+
+// Create a linked copy of an existing exercise
+export function createLinkedExercise(userId: string, sourceExerciseId: number, targetDayId: number) {
+  try {
+    // Get source exercise
+    const source = db.query.exercises.findFirst({
+      where: eq(exercises.id, sourceExerciseId),
+      with: { workoutDay: true }
+    }).sync();
+
+    if (!source) return null;
+
+    // Verify user owns the source workout
+    const sourceWorkout = getWorkout(userId, source.workoutDayId);
+    if (!sourceWorkout) return null;
+
+    // Verify user owns the target workout
+    const targetWorkout = getWorkout(userId, targetDayId);
+    if (!targetWorkout) return null;
+
+    // Determine the link group ID
+    let linkGroupId = source.linkGroupId;
+    if (!linkGroupId) {
+      // Source is not linked yet - create a new link group and update source
+      linkGroupId = generateLinkGroupId();
+      db.update(exercises)
+        .set({ linkGroupId })
+        .where(eq(exercises.id, sourceExerciseId))
+        .run();
+    }
+
+    // Create the linked copy
+    const result = db.insert(exercises).values({
+      workoutDayId: targetDayId,
+      name: source.name,
+      targetSets: source.targetSets,
+      targetReps: source.targetReps,
+      targetWeight: source.targetWeight,
+      restSeconds: source.restSeconds,
+      notes: source.notes,
+      sortOrder: 0,
+      linkGroupId
+    }).returning().all();
+
+    return result[0] ?? null;
+  } catch (err) {
+    console.error('Failed to create linked exercise:', err);
+    return null;
+  }
+}
+
+// Unlink an exercise from its group
+export function unlinkExercise(userId: string, exerciseId: number) {
+  try {
+    const exercise = db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId)
+    }).sync();
+
+    if (!exercise) return false;
+
+    const workout = getWorkout(userId, exercise.workoutDayId);
+    if (!workout) return false;
+
+    db.update(exercises)
+      .set({ linkGroupId: null })
+      .where(eq(exercises.id, exerciseId))
+      .run();
+
+    return true;
+  } catch (err) {
+    console.error('Failed to unlink exercise:', err);
+    return false;
   }
 }
 
@@ -454,7 +558,25 @@ export function updateExercise(userId: string, exerciseId: number, data: Partial
     const workout = getWorkout(userId, exercise.workoutDayId);
     if (!workout) return null;
 
+    // Update the exercise
     db.update(exercises).set(data).where(eq(exercises.id, exerciseId)).run();
+
+    // If this exercise is linked and weight was updated, sync to other linked exercises
+    if (exercise.linkGroupId && data.targetWeight !== undefined) {
+      const linkedExercises = getLinkedExercises(exercise.linkGroupId);
+      for (const linked of linkedExercises) {
+        if (linked.id !== exerciseId) {
+          // Verify user owns the linked exercise's workout before updating
+          const linkedWorkout = getWorkout(userId, linked.workoutDayId);
+          if (linkedWorkout) {
+            db.update(exercises)
+              .set({ targetWeight: data.targetWeight })
+              .where(eq(exercises.id, linked.id))
+              .run();
+          }
+        }
+      }
+    }
 
     return db.query.exercises.findFirst({
       where: eq(exercises.id, exerciseId)

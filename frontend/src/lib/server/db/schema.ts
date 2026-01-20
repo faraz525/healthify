@@ -98,7 +98,9 @@ export const exercises = sqliteTable('exercises', {
   targetWeight: text('target_weight'),
   restSeconds: integer('rest_seconds'),
   notes: text('notes'),
-  sortOrder: integer('sort_order').default(0)
+  sortOrder: integer('sort_order').default(0),
+  // Link group ID - exercises with the same linkGroupId sync their weights
+  linkGroupId: integer('link_group_id')
 });
 
 // Relations
