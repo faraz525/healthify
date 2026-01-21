@@ -16,30 +16,40 @@ export function getIssueTypes(activeOnly = true) {
 
 // Check if an issue type name is valid
 export function isValidIssueType(typeName: string): boolean {
-  const now = Date.now();
+  try {
+    const now = Date.now();
 
-  // Refresh cache if expired or not initialized
-  if (!issueTypeNamesCache || (now - cacheTimestamp) > CACHE_TTL_MS) {
-    const allTypes = db.query.issueTypes.findMany().sync();
-    issueTypeNamesCache = new Set(allTypes.map(t => t.name));
-    cacheTimestamp = now;
+    // Refresh cache if expired or not initialized
+    if (!issueTypeNamesCache || (now - cacheTimestamp) > CACHE_TTL_MS) {
+      const allTypes = db.query.issueTypes.findMany().sync();
+      issueTypeNamesCache = new Set(allTypes.map(t => t.name));
+      cacheTimestamp = now;
+    }
+
+    return issueTypeNamesCache.has(typeName);
+  } catch (err) {
+    console.error('Failed to validate issue type:', err);
+    return false; // Reject unknown types on error for safety
   }
-
-  return issueTypeNamesCache.has(typeName);
 }
 
 // Validate multiple issue types and return only valid ones
 export function filterValidIssueTypes(typeNames: string[]): string[] {
-  const now = Date.now();
+  try {
+    const now = Date.now();
 
-  // Refresh cache if expired or not initialized
-  if (!issueTypeNamesCache || (now - cacheTimestamp) > CACHE_TTL_MS) {
-    const allTypes = db.query.issueTypes.findMany().sync();
-    issueTypeNamesCache = new Set(allTypes.map(t => t.name));
-    cacheTimestamp = now;
+    // Refresh cache if expired or not initialized
+    if (!issueTypeNamesCache || (now - cacheTimestamp) > CACHE_TTL_MS) {
+      const allTypes = db.query.issueTypes.findMany().sync();
+      issueTypeNamesCache = new Set(allTypes.map(t => t.name));
+      cacheTimestamp = now;
+    }
+
+    return typeNames.filter(name => issueTypeNamesCache!.has(name));
+  } catch (err) {
+    console.error('Failed to filter issue types:', err);
+    return []; // Return empty array on error for safety
   }
-
-  return typeNames.filter(name => issueTypeNamesCache!.has(name));
 }
 
 export function createIssueType(data: {
