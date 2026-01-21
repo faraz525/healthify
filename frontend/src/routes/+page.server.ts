@@ -1,5 +1,18 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
+
+// Helper to safely parse integers with validation
+function safeParseInt(value: FormDataEntryValue | null, fieldName: string): number | { error: string } {
+  if (value === null || value === '') {
+    return { error: `${fieldName} is required` };
+  }
+  const parsed = parseInt(value as string, 10);
+  if (isNaN(parsed)) {
+    return { error: `Invalid ${fieldName}` };
+  }
+  return parsed;
+}
+
 import {
   getWorkouts,
   getTodaysWorkout,
@@ -122,7 +135,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const workout = updateWorkout(userId, id, data);
     if (!workout) {
@@ -153,7 +172,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const dayId = parseInt(formData.get('dayId') as string);
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const exercise = createExercise(userId, dayId, data);
     if (!exercise) {
@@ -169,7 +194,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const exerciseId = parseInt(formData.get('exerciseId') as string);
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const exercise = updateExercise(userId, exerciseId, data);
     if (!exercise) {

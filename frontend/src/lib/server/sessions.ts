@@ -25,34 +25,23 @@ function verifyWorkoutOwnership(userId: string, workoutDayId: number): boolean {
 }
 
 // Helper to get all workout day IDs belonging to a user
+// Consolidated into a single query to avoid N+1 pattern
 function getUserWorkoutDayIds(userId: string): number[] {
-  // Get standalone workouts (with userId directly set)
-  const standaloneWorkouts = db.query.workoutDays.findMany({
-    where: eq(workoutDays.userId, userId)
-  }).sync();
-
-  // Get workouts from user's routines
-  const routineWorkouts = db.query.workoutDays.findMany({
-    where: eq(workoutDays.routineId, db.query.workoutRoutines.findFirst({
-      where: eq(workoutRoutines.userId, userId)
-    }).sync()?.id ?? -1)
-  }).sync();
-
-  // Also get all workouts from all user's routines
+  // Single query: get all routines with their days, plus standalone workouts
   const userRoutines = db.query.workoutRoutines.findMany({
     where: eq(workoutRoutines.userId, userId),
     with: { days: true }
   }).sync();
 
+  const standaloneWorkouts = db.query.workoutDays.findMany({
+    where: eq(workoutDays.userId, userId)
+  }).sync();
+
   const routineWorkoutIds = userRoutines.flatMap(r => r.days.map(d => d.id));
+  const standaloneIds = standaloneWorkouts.map(w => w.id);
 
-  const allIds = new Set([
-    ...standaloneWorkouts.map(w => w.id),
-    ...routineWorkouts.map(w => w.id),
-    ...routineWorkoutIds
-  ]);
-
-  return Array.from(allIds);
+  // Use Set to deduplicate
+  return Array.from(new Set([...routineWorkoutIds, ...standaloneIds]));
 }
 
 // Get the active workout session for user (if any)
@@ -201,12 +190,15 @@ export function logExerciseSet(
   const session = getSession(userId, sessionId);
   if (!session || session.status !== 'active') return null;
 
-  // Verify exercise exists
+  // Verify exercise exists and belongs to the session's workout
   const exercise = db.query.exercises.findFirst({
     where: eq(exercises.id, exerciseId)
   }).sync();
 
   if (!exercise) return null;
+
+  // SECURITY: Verify the exercise belongs to this session's workout
+  if (exercise.workoutDayId !== session.workoutDayId) return null;
 
   const isNewPR = weight && reps ? isPR(userId, exerciseId, weight, reps) : false;
   const previousBest = getBestPreviousLog(userId, exerciseId, sessionId);
@@ -402,13 +394,11 @@ export function getExerciseHistory(userId: string, exerciseId: number, limit = 1
     }).sync();
 
     if (!exercise) {
-      console.log('getExerciseHistory: exercise not found', exerciseId);
       return [];
     }
 
     const workout = exercise.workoutDay;
     if (workout.userId !== userId && (!workout.routine || workout.routine.userId !== userId)) {
-      console.log('getExerciseHistory: user does not own exercise', { exerciseId, userId, workoutUserId: workout.userId });
       return [];
     }
 
@@ -423,8 +413,6 @@ export function getExerciseHistory(userId: string, exerciseId: number, limit = 1
     const completedLogs = allLogs
       .filter(log => log.session?.status === 'completed')
       .slice(0, limit);
-
-    console.log('getExerciseHistory:', { exerciseId, totalLogs: allLogs.length, completedLogs: completedLogs.length });
 
     return completedLogs;
   } catch (err) {

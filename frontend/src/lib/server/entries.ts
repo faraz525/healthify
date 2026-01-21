@@ -1,6 +1,7 @@
 import { db, sqlite } from './db';
 import { dailyEntries, healthIssues } from './db/schema';
 import { eq, desc, gte, lte, and } from 'drizzle-orm';
+import { isValidIssueType } from './issueTypes';
 
 export type EntryInput = {
   date: string;
@@ -79,21 +80,28 @@ export function createEntry(userId: string, data: EntryInput) {
       }
 
       if (issues && issues.length > 0) {
-        db.insert(healthIssues).values(
-          issues.map(issue => ({
-            dailyEntryId: entry.id,
-            issueType: issue.issueType,
-            severity: issue.severity,
-            notes: issue.notes,
-            timeOfDay: issue.timeOfDay
-          }))
-        ).run();
+        // Filter to only valid issue types to prevent data integrity issues
+        const validIssues = issues.filter(issue => isValidIssueType(issue.issueType));
+        if (validIssues.length > 0) {
+          db.insert(healthIssues).values(
+            validIssues.map(issue => ({
+              dailyEntryId: entry.id,
+              issueType: issue.issueType,
+              severity: issue.severity,
+              notes: issue.notes,
+              timeOfDay: issue.timeOfDay
+            }))
+          ).run();
+        }
       }
 
-      return entry;
+      return entry.id;
     });
 
-    createEntryTx();
+    const entryId = createEntryTx();
+    if (!entryId) return null;
+
+    // Fetch the complete entry with health issues
     return getEntryByDate(userId, data.date);
   } catch (err) {
     console.error('Failed to create entry:', err);
@@ -127,15 +135,19 @@ export function updateEntry(userId: string, date: string, data: Partial<EntryInp
         db.delete(healthIssues).where(eq(healthIssues.dailyEntryId, existing.id)).run();
 
         if (issues.length > 0) {
-          db.insert(healthIssues).values(
-            issues.map(issue => ({
-              dailyEntryId: existing.id,
-              issueType: issue.issueType,
-              severity: issue.severity,
-              notes: issue.notes,
-              timeOfDay: issue.timeOfDay
-            }))
-          ).run();
+          // Filter to only valid issue types to prevent data integrity issues
+          const validIssues = issues.filter(issue => isValidIssueType(issue.issueType));
+          if (validIssues.length > 0) {
+            db.insert(healthIssues).values(
+              validIssues.map(issue => ({
+                dailyEntryId: existing.id,
+                issueType: issue.issueType,
+                severity: issue.severity,
+                notes: issue.notes,
+                timeOfDay: issue.timeOfDay
+              }))
+            ).run();
+          }
         }
       }
     });

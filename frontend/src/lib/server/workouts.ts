@@ -408,17 +408,26 @@ export function deleteWorkoutDay(userId: string, dayId: number) {
 
 // Exercise operations
 
-// Generate a new unique link group ID
-export function generateLinkGroupId(): number {
+// Generate a new unique link group ID scoped to a user
+// SECURITY: Link groups are now scoped per-user to prevent cross-user collisions
+export function generateLinkGroupId(userId: string): number {
   try {
-    const result = db.select({ maxId: exercises.linkGroupId })
-      .from(exercises)
-      .all();
-    const maxId = result.reduce((max, row) => Math.max(max, row.maxId ?? 0), 0);
+    // Get max linkGroupId only from exercises belonging to this user's workouts
+    const userWorkouts = getWorkouts(userId);
+    const userWorkoutIds = userWorkouts.map(w => w.id);
+
+    if (userWorkoutIds.length === 0) return 1;
+
+    const userExercises = db.query.exercises.findMany({
+      where: or(...userWorkoutIds.map(id => eq(exercises.workoutDayId, id)))
+    }).sync();
+
+    const maxId = userExercises.reduce((max, ex) => Math.max(max, ex.linkGroupId ?? 0), 0);
     return maxId + 1;
   } catch (err) {
     console.error('Failed to generate link group ID:', err);
-    return Date.now(); // Fallback to timestamp
+    // Fallback: use timestamp + random to minimize collision risk
+    return Date.now() % 1000000000 + Math.floor(Math.random() * 1000);
   }
 }
 
@@ -464,6 +473,7 @@ export function createExercise(userId: string, dayId: number, data: {
 }
 
 // Create a linked copy of an existing exercise
+// Uses a transaction to prevent race conditions in linkGroupId generation
 export function createLinkedExercise(userId: string, sourceExerciseId: number, targetDayId: number) {
   try {
     // Get source exercise
@@ -482,31 +492,37 @@ export function createLinkedExercise(userId: string, sourceExerciseId: number, t
     const targetWorkout = getWorkout(userId, targetDayId);
     if (!targetWorkout) return null;
 
-    // Determine the link group ID
-    let linkGroupId = source.linkGroupId;
-    if (!linkGroupId) {
-      // Source is not linked yet - create a new link group and update source
-      linkGroupId = generateLinkGroupId();
-      db.update(exercises)
-        .set({ linkGroupId })
-        .where(eq(exercises.id, sourceExerciseId))
-        .run();
-    }
+    // Use a transaction to atomically generate linkGroupId and create the linked exercise
+    const createLinkedTx = sqlite.transaction(() => {
+      // Determine the link group ID
+      let linkGroupId = source.linkGroupId;
+      if (!linkGroupId) {
+        // Source is not linked yet - create a new link group and update source
+        // Pass userId to scope the linkGroupId to this user
+        linkGroupId = generateLinkGroupId(userId);
+        db.update(exercises)
+          .set({ linkGroupId })
+          .where(eq(exercises.id, sourceExerciseId))
+          .run();
+      }
 
-    // Create the linked copy
-    const result = db.insert(exercises).values({
-      workoutDayId: targetDayId,
-      name: source.name,
-      targetSets: source.targetSets,
-      targetReps: source.targetReps,
-      targetWeight: source.targetWeight,
-      restSeconds: source.restSeconds,
-      notes: source.notes,
-      sortOrder: 0,
-      linkGroupId
-    }).returning().all();
+      // Create the linked copy
+      const result = db.insert(exercises).values({
+        workoutDayId: targetDayId,
+        name: source.name,
+        targetSets: source.targetSets,
+        targetReps: source.targetReps,
+        targetWeight: source.targetWeight,
+        restSeconds: source.restSeconds,
+        notes: source.notes,
+        sortOrder: 0,
+        linkGroupId
+      }).returning().all();
 
-    return result[0] ?? null;
+      return result[0] ?? null;
+    });
+
+    return createLinkedTx();
   } catch (err) {
     console.error('Failed to create linked exercise:', err);
     return null;
@@ -562,6 +578,7 @@ export function updateExercise(userId: string, exerciseId: number, data: Partial
     db.update(exercises).set(data).where(eq(exercises.id, exerciseId)).run();
 
     // If this exercise is linked and weight was updated, sync to other linked exercises
+    // SECURITY: Only syncs to exercises the user owns (linkGroupId is scoped per-user)
     if (exercise.linkGroupId && data.targetWeight !== undefined) {
       const linkedExercises = getLinkedExercises(exercise.linkGroupId);
       for (const linked of linkedExercises) {

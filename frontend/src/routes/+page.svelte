@@ -403,8 +403,8 @@
     formData.set('limit', '30');
     const response = await fetch('?/getExerciseHistory', { method: 'POST', body: formData });
     const result = deserialize(await response.text());
-    if (result.type === 'success' && result.data?.history) {
-      exerciseHistoryData = result.data.history;
+    if (result.type === 'success' && result.data?.history && Array.isArray(result.data.history)) {
+      exerciseHistoryData = result.data.history as typeof exerciseHistoryData;
     } else {
       exerciseHistoryData = [];
     }
@@ -840,21 +840,24 @@
 
                   <!-- Exercise Details with Weights -->
                   {#if session.exerciseLogs && session.exerciseLogs.length > 0}
-                    {@const groupedLogs = session.exerciseLogs.reduce((acc, log) => {
-                      const name = log.exercise?.name ?? 'Unknown';
-                      if (!acc[name]) acc[name] = [];
-                      acc[name].push(log);
-                      return acc;
-                    }, {} as Record<string, typeof session.exerciseLogs>)}
+                    {@const groupedLogs = (() => {
+                      const result: Record<string, NonNullable<typeof session.exerciseLogs>> = {};
+                      for (const log of session.exerciseLogs!) {
+                        const name = log.exercise?.name ?? 'Unknown';
+                        if (!result[name]) result[name] = [];
+                        result[name].push(log);
+                      }
+                      return result;
+                    })()}
 
                     <div class="space-y-3">
-                      {#each Object.entries(groupedLogs) as [exerciseName, logs]}
-                        {@const bestLog = logs.reduce((best, log) => {
+                      {#each Object.entries(groupedLogs) as [exerciseName, exerciseLogs]}
+                        {@const bestLog = exerciseLogs.length > 0 ? exerciseLogs.reduce((best: typeof exerciseLogs[0], log: typeof exerciseLogs[0]) => {
                           const score = (parseFloat(log.weight || '0') || 0) * (log.reps || 0);
                           const bestScore = (parseFloat(best.weight || '0') || 0) * (best.reps || 0);
                           return score > bestScore ? log : best;
-                        }, logs[0])}
-                        {@const hasPR = logs.some(l => l.isPR)}
+                        }, exerciseLogs[0]) : exerciseLogs[0]}
+                        {@const hasPR = exerciseLogs.some((l: typeof exerciseLogs[0]) => l.isPR)}
 
                         <div class="flex items-center justify-between p-3 bg-(--color-bg) rounded-xl {hasPR ? 'ring-2 ring-amber-400/40' : ''}">
                           <div class="flex items-center gap-2">
@@ -864,7 +867,7 @@
                             {/if}
                           </div>
                           <div class="flex items-center gap-3 text-sm">
-                            <span class="text-(--color-text-muted)">{logs.length} sets</span>
+                            <span class="text-(--color-text-muted)">{exerciseLogs.length} sets</span>
                             <span class="font-bold text-(--color-primary)">{bestLog.weight ?? '-'} x {bestLog.reps ?? '-'}</span>
                           </div>
                         </div>
@@ -878,7 +881,7 @@
         {/if}
 
         <!-- Start New Workout -->
-        {#if todaysWorkout && !todaysCompletedSessions.some(s => s.workoutDayId === todaysWorkout?.id)}
+        {#if todaysWorkout && !todaysCompletedSessions.some((s: typeof todaysCompletedSessions[0]) => s.workoutDayId === todaysWorkout?.id)}
           <div class="bg-(--color-bg-card) rounded-2xl border border-(--color-border-light) shadow-sm overflow-hidden">
             <div class="p-5 sm:p-6 border-b border-(--color-border-light)">
               <div class="flex items-start justify-between gap-4">

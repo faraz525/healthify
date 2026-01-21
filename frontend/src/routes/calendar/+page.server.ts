@@ -42,7 +42,13 @@ export const actions: Actions = {
 
     const userId = locals.user.id;
     const formData = await request.formData();
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     // Check if entry already exists
     const existing = getEntryByDate(userId, data.date);
@@ -60,7 +66,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const date = formData.get('date') as string;
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const entry = updateEntry(userId, date, data);
     if (!entry) {

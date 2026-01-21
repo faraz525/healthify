@@ -123,6 +123,9 @@ function calculateWorkoutStreak(userId: string): number {
     orderBy: desc(dailyEntries.date)
   }).sync();
 
+  // Use Map for O(1) lookup instead of .find() which is O(n)
+  const entriesByDate = new Map(allEntries.map(e => [e.date, e]));
+
   let streak = 0;
   const today = new Date();
 
@@ -131,7 +134,7 @@ function calculateWorkoutStreak(userId: string): number {
     checkDate.setDate(checkDate.getDate() - i);
     const dateStr = checkDate.toISOString().split('T')[0];
 
-    const entry = allEntries.find(e => e.date === dateStr);
+    const entry = entriesByDate.get(dateStr);
 
     if (entry && entry.workedOut) {
       streak++;
