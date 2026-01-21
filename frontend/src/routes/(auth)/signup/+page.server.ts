@@ -27,9 +27,10 @@ export const actions: Actions = {
       return fail(400, { error: 'All fields are required', email });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    // Validate email format with stricter regex
+    // Requires: local part, @, domain with at least one dot, TLD of 2+ chars
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email) || email.length > 254) {
       return fail(400, { error: 'Please enter a valid email address', email });
     }
 

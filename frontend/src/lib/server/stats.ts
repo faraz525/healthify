@@ -65,9 +65,9 @@ export function getStats(userId: string, days = 30): Stats {
     .all();
 
   const commonIssues: CommonIssue[] = issueCountsResult.map(r => ({
-    type: r.issueType,
-    displayName: r.displayName || r.issueType.replace(/_/g, ' '),
-    count: r.count
+    type: r.issueType ?? 'unknown',
+    displayName: r.displayName ?? (r.issueType ? r.issueType.replace(/_/g, ' ') : 'Unknown Issue'),
+    count: r.count ?? 0
   }));
 
   // Calculate entry streak (consecutive days with entries)

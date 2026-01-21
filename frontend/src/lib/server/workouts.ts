@@ -52,12 +52,13 @@ export function getWorkout(userId: string, id: number) {
 export function getTodaysWorkout(userId: string) {
   try {
     // JavaScript: Sunday=0, Monday=1... we need Monday=0
-    const jsDay = new Date().getDay();
-    const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
+    const jsDay: number = new Date().getDay();
+    const dayOfWeek: number = jsDay === 0 ? 6 : jsDay - 1;
 
     // Find user's workout assigned to today
     const workouts = getWorkouts(userId);
-    return workouts.find(w => w.dayOfWeek === dayOfWeek) || null;
+    // Explicit number comparison to avoid type coercion issues
+    return workouts.find(w => w.dayOfWeek !== null && w.dayOfWeek !== undefined && Number(w.dayOfWeek) === dayOfWeek) || null;
   } catch (err) {
     console.error('Failed to get today\'s workout:', err);
     return null;
@@ -579,17 +580,19 @@ export function updateExercise(userId: string, exerciseId: number, data: Partial
 
     // If this exercise is linked and weight was updated, sync to other linked exercises
     // SECURITY: Only syncs to exercises the user owns (linkGroupId is scoped per-user)
-    if (exercise.linkGroupId && data.targetWeight !== undefined) {
+    if (exercise.linkGroupId && data.targetWeight !== undefined && data.targetWeight !== null) {
       const linkedExercises = getLinkedExercises(exercise.linkGroupId);
-      for (const linked of linkedExercises) {
-        if (linked.id !== exerciseId) {
-          // Verify user owns the linked exercise's workout before updating
-          const linkedWorkout = getWorkout(userId, linked.workoutDayId);
-          if (linkedWorkout) {
-            db.update(exercises)
-              .set({ targetWeight: data.targetWeight })
-              .where(eq(exercises.id, linked.id))
-              .run();
+      if (linkedExercises && linkedExercises.length > 0) {
+        for (const linked of linkedExercises) {
+          if (linked && linked.id !== exerciseId && linked.workoutDayId) {
+            // Verify user owns the linked exercise's workout before updating
+            const linkedWorkout = getWorkout(userId, linked.workoutDayId);
+            if (linkedWorkout) {
+              db.update(exercises)
+                .set({ targetWeight: data.targetWeight })
+                .where(eq(exercises.id, linked.id))
+                .run();
+            }
           }
         }
       }

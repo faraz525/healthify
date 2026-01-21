@@ -78,7 +78,7 @@
   </div>
 
   <div class="grid grid-cols-7 gap-1 max-sm:gap-0.5">
-    {#each calendarDays as day, i}
+    {#each calendarDays as day}
       {#if day === null}
         <div class="aspect-square"></div>
       {:else}
