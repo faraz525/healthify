@@ -127,12 +127,6 @@
     return Math.round((min + max) / 2);
   }
 
-  function handleQuickLog(exerciseId: number, exerciseName: string, targetWeight: string | null | undefined, targetReps: string | null | undefined, targetSets: number | null | undefined, exerciseLogs: ExerciseLog[]) {
-    const weight = getSessionWeight(exerciseId, exerciseLogs, targetWeight, targetSets);
-    const reps = parseTargetReps(targetReps);
-    handleLogSet(exerciseId, exerciseName, getNextSetNumber(exerciseId), weight, reps);
-  }
-
   let showAddExerciseModal = $state(false);
   let newExerciseName = $state('');
   let newExerciseSets = $state(3);
@@ -256,11 +250,14 @@
     const filtered = weights.filter(w => w !== '');
     if (filtered.length === 0) return null;
 
-    // If all weights are the same, store as single value
+    // Only store as single value if ALL positions have the same non-empty value
+    // This prevents ["5", "", ""] from becoming "5" which would then apply to all sets
     const unique = [...new Set(filtered)];
-    if (unique.length === 1) return unique[0];
+    if (unique.length === 1 && filtered.length === weights.length) {
+      return unique[0];
+    }
 
-    // Otherwise store as comma-separated
+    // Otherwise store as comma-separated (preserves position info)
     return weights.join(',');
   }
 
@@ -287,6 +284,14 @@
     }
   }
 
+  function applyWeightToAllSets(exercise: Exercise, currentWeights: string[], numSets: number) {
+    const firstWeight = currentWeights[0];
+    if (!firstWeight || !exercise.id) return;
+
+    const newWeights = Array(numSets).fill(firstWeight);
+    handleUpdateExercise(exercise.id, 'targetWeight', serializeSetWeights(newWeights));
+  }
+
   function getSessionWeight(exerciseId: number, exerciseLogs: ExerciseLog[], targetWeight: string | null | undefined, targetSets: number | null | undefined): string {
     if (sessionWeights[exerciseId] !== undefined) {
       return sessionWeights[exerciseId];
@@ -306,7 +311,7 @@
     const match = currentWeight.match(/^(\d+(?:\.\d+)?)/);
     const numericWeight = match ? parseFloat(match[1]) : 0;
     const newWeight = Math.max(0, numericWeight + delta);
-    sessionWeights[exerciseId] = newWeight > 0 ? `${newWeight}` : '0';
+    sessionWeights[exerciseId] = newWeight > 0 ? `${newWeight}` : '';
   }
 
   function updateSessionWeight(exerciseId: number, value: string) {
@@ -727,7 +732,7 @@
 
                 <!-- Add Set Form -->
                 {#if !isComplete || !exercise.targetSets}
-                  <form class="flex flex-wrap items-center gap-2 pt-3 border-t border-dashed border-(--color-border-light)" onsubmit={(e) => {
+                  <form class="pt-4 border-t border-dashed border-(--color-border-light)" onsubmit={(e) => {
                     e.preventDefault();
                     const weight = getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets);
                     const reps = getSessionReps(exercise.id!, exerciseLogs, exercise.targetReps);
@@ -735,21 +740,47 @@
                       handleLogSet(exercise.id!, exercise.name, getNextSetNumber(exercise.id!), weight, reps);
                     }
                   }}>
-                    <span class="text-sm font-semibold text-(--color-text-muted) w-14">Set {getNextSetNumber(exercise.id!)}</span>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, -5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>-5</button>
-                      <input type="text" name="weight" class="w-20 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets)} oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)} />
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>+5</button>
+                    <!-- Set Number Label -->
+                    <div class="flex items-center gap-2 mb-3">
+                      <span class="inline-flex items-center justify-center w-8 h-8 bg-(--color-primary)/15 text-(--color-primary) rounded-lg text-sm font-bold">{getNextSetNumber(exercise.id!)}</span>
+                      <span class="text-sm font-medium text-(--color-text-muted)">Next set</span>
                     </div>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionReps(exercise.id!, -1, exerciseLogs, exercise.targetReps)}>-1</button>
-                      <input type="number" name="reps" class="w-14 h-10 px-2 text-center font-bold text-(--color-text) bg-(--color-bg-card) border-2 border-(--color-border) rounded-xl focus:outline-none focus:border-(--color-primary)" min="1" value={getSessionReps(exercise.id!, exerciseLogs, exercise.targetReps)} oninput={(e) => updateSessionReps(exercise.id!, parseInt((e.target as HTMLInputElement).value) || 1)} />
-                      <button type="button" class="w-10 h-10 flex items-center justify-center rounded-xl text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => adjustSessionReps(exercise.id!, 1, exerciseLogs, exercise.targetReps)}>+1</button>
+
+                    <!-- Input Groups -->
+                    <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                      <!-- Weight Input Group -->
+                      <div class="flex-1">
+                        <label class="block text-xs font-semibold text-(--color-text-muted) uppercase tracking-wide mb-1.5">Weight</label>
+                        <div class="flex items-center bg-(--color-bg-card) rounded-xl border-2 border-(--color-border) overflow-hidden focus-within:border-(--color-primary)">
+                          <button type="button" class="w-11 h-11 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light) flex-shrink-0" onclick={() => adjustSessionWeight(exercise.id!, -5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                          </button>
+                          <input type="text" name="weight" class="flex-1 min-w-0 h-11 px-1 text-center text-lg font-bold text-(--color-text) bg-transparent border-none focus:outline-none" value={getSessionWeight(exercise.id!, exerciseLogs, exercise.targetWeight, exercise.targetSets)} oninput={(e) => updateSessionWeight(exercise.id!, (e.target as HTMLInputElement).value)} />
+                          <button type="button" class="w-11 h-11 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light) flex-shrink-0" onclick={() => adjustSessionWeight(exercise.id!, 5, exerciseLogs, exercise.targetWeight, exercise.targetSets)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Reps Input Group -->
+                      <div class="flex-1">
+                        <label class="block text-xs font-semibold text-(--color-text-muted) uppercase tracking-wide mb-1.5">Reps</label>
+                        <div class="flex items-center bg-(--color-bg-card) rounded-xl border-2 border-(--color-border) overflow-hidden focus-within:border-(--color-primary)">
+                          <button type="button" class="w-11 h-11 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light) flex-shrink-0" onclick={() => adjustSessionReps(exercise.id!, -1, exerciseLogs, exercise.targetReps)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                          </button>
+                          <input type="number" name="reps" class="flex-1 min-w-0 h-11 px-1 text-center text-lg font-bold text-(--color-text) bg-transparent border-none focus:outline-none" min="1" value={getSessionReps(exercise.id!, exerciseLogs, exercise.targetReps)} oninput={(e) => updateSessionReps(exercise.id!, parseInt((e.target as HTMLInputElement).value) || 1)} />
+                          <button type="button" class="w-11 h-11 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light) flex-shrink-0" onclick={() => adjustSessionReps(exercise.id!, 1, exerciseLogs, exercise.targetReps)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <button type="submit" class="h-10 px-4 bg-(--color-primary) text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all active:scale-95">Log</button>
-                    {#if exercise.targetWeight || exercise.targetReps}
-                      <button type="button" class="h-10 px-4 bg-(--color-success)/15 text-(--color-success) font-semibold rounded-xl border border-(--color-success)/40 hover:bg-(--color-success) hover:text-white transition-all active:scale-95" onclick={() => handleQuickLog(exercise.id!, exercise.name, exercise.targetWeight, exercise.targetReps, exercise.targetSets, exerciseLogs)}>Quick</button>
-                    {/if}
+
+                    <!-- Action Button -->
+                    <button type="submit" class="w-full h-12 bg-(--color-primary) text-white font-bold rounded-xl shadow-sm hover:shadow-md transition-all active:scale-[0.98]">
+                      Log Set
+                    </button>
                   </form>
                 {/if}
               </div>
@@ -1046,6 +1077,7 @@
                               type="text"
                               class="w-full text-lg font-bold bg-transparent border-none p-0 pr-8 focus:outline-none text-(--color-text)"
                               value={exercise.name}
+                              onfocus={(e) => (e.target as HTMLInputElement).select()}
                               onblur={(e) => handleUpdateExercise(exercise.id!, 'name', (e.target as HTMLInputElement).value, workout.id)}
                             />
                             {#if exercise.name}
@@ -1090,7 +1122,7 @@
                         </div>
 
                         <!-- Sets & Reps Row -->
-                        <div class="flex items-center gap-4 mb-4">
+                        <div class="flex flex-wrap items-center gap-4 mb-4">
                           <div class="flex items-center gap-2">
                             <label class="text-sm font-medium text-(--color-text-muted)">Sets</label>
                             <input
@@ -1104,50 +1136,74 @@
                           </div>
                           <div class="flex items-center gap-2">
                             <label class="text-sm font-medium text-(--color-text-muted)">Reps</label>
-                            <button
-                              type="button"
-                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95"
-                              onclick={() => adjustTargetReps(exercise, -1)}
-                            >-</button>
-                            <input
-                              type="text"
-                              class="w-14 px-2 py-1.5 text-center font-semibold bg-(--color-bg-card) border border-(--color-border) rounded-lg focus:outline-none focus:border-(--color-primary)"
-                              value={exercise.targetReps ?? ''}
-                              placeholder="8-12"
-                              onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
-                            />
-                            <button
-                              type="button"
-                              class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95"
-                              onclick={() => adjustTargetReps(exercise, 1)}
-                            >+</button>
+                            <div class="flex items-center bg-(--color-bg-card) rounded-lg border border-(--color-border) overflow-hidden">
+                              <button
+                                type="button"
+                                class="w-8 h-8 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light)"
+                                onclick={() => adjustTargetReps(exercise, -1)}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                              </button>
+                              <input
+                                type="text"
+                                class="w-14 py-1.5 text-center font-semibold bg-transparent border-none focus:outline-none text-(--color-text)"
+                                value={exercise.targetReps ?? ''}
+                                placeholder="8-12"
+                                onblur={(e) => handleUpdateExercise(exercise.id!, 'targetReps', (e.target as HTMLInputElement).value || null)}
+                              />
+                              <button
+                                type="button"
+                                class="w-8 h-8 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light)"
+                                onclick={() => adjustTargetReps(exercise, 1)}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                              </button>
+                            </div>
                           </div>
                         </div>
 
                         <!-- Weight Per Set -->
                         <div class="space-y-2">
-                          <label class="block text-sm font-semibold text-(--color-text)">Target Weight per Set</label>
+                          <div class="flex items-center justify-between">
+                            <label class="block text-sm font-semibold text-(--color-text)">Target Weight per Set</label>
+                            {#if setWeights[0] && targetSets > 1 && setWeights.slice(1).some(w => w !== setWeights[0])}
+                              <button
+                                type="button"
+                                class="text-xs font-medium text-(--color-primary) hover:text-(--color-primary)/80 transition-colors flex items-center gap-1"
+                                onclick={() => applyWeightToAllSets(exercise, setWeights, targetSets)}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                Apply to all
+                              </button>
+                            {/if}
+                          </div>
                           <div class="flex flex-wrap gap-2">
                             {#each Array(targetSets) as _, setIndex}
-                              <div class="flex items-center gap-1.5 p-2 bg-(--color-bg-card) rounded-xl border border-(--color-border-light)">
-                                <span class="text-xs font-bold text-(--color-text-muted) w-5">#{setIndex + 1}</span>
-                                <button
-                                  type="button"
-                                  class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-danger)/15 text-(--color-danger) hover:bg-(--color-danger) hover:text-white transition-all active:scale-95"
-                                  onclick={() => adjustSetWeight(exercise, setIndex, -5, setWeights)}
-                                >-</button>
-                                <input
-                                  type="text"
-                                  class="w-16 h-8 px-1 text-center text-lg font-bold bg-transparent border-none focus:outline-none text-(--color-primary)"
-                                  value={setWeights[setIndex] ?? ''}
-                                  placeholder="—"
-                                  oninput={(e) => updateSetWeight(exercise, setIndex, (e.target as HTMLInputElement).value, setWeights)}
-                                />
-                                <button
-                                  type="button"
-                                  class="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold bg-(--color-success)/15 text-(--color-success) hover:bg-(--color-success) hover:text-white transition-all active:scale-95"
-                                  onclick={() => adjustSetWeight(exercise, setIndex, 5, setWeights)}
-                                >+</button>
+                              <div class="flex items-center gap-1 p-1.5 bg-(--color-bg-card) rounded-xl border border-(--color-border-light)">
+                                <span class="text-xs font-bold text-(--color-text-muted) w-6 text-center">#{setIndex + 1}</span>
+                                <div class="flex items-center bg-(--color-bg) rounded-lg border border-(--color-border) overflow-hidden">
+                                  <button
+                                    type="button"
+                                    class="w-8 h-8 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light)"
+                                    onclick={() => adjustSetWeight(exercise, setIndex, -5, setWeights)}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14"/></svg>
+                                  </button>
+                                  <input
+                                    type="text"
+                                    class="w-14 h-8 px-1 text-center text-base font-bold bg-transparent border-none focus:outline-none text-(--color-text)"
+                                    value={setWeights[setIndex] ?? ''}
+                                    placeholder="—"
+                                    oninput={(e) => updateSetWeight(exercise, setIndex, (e.target as HTMLInputElement).value, setWeights)}
+                                  />
+                                  <button
+                                    type="button"
+                                    class="w-8 h-8 flex items-center justify-center text-(--color-text-muted) hover:bg-(--color-bg-hover) hover:text-(--color-text) transition-colors active:bg-(--color-border-light)"
+                                    onclick={() => adjustSetWeight(exercise, setIndex, 5, setWeights)}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                                  </button>
+                                </div>
                               </div>
                             {/each}
                           </div>
