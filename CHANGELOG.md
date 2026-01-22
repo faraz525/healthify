@@ -11,10 +11,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Import Existing modal with "Linked" and "Copy Only" options
 - Link icon indicator on linked exercises with unlink functionality
 - Duplicate name validation for workouts and exercises (alerts user)
+- Server-side duplicate workout name validation (prevents creating duplicates)
+- Database indexes for sessions, workout sessions, exercise logs, and health issues
+- Issue type caching for faster validation (1-minute TTL)
+- Periodic session cleanup in hooks.server.ts
+
+### Changed
+- Improved email validation with stricter RFC-compliant regex
+- Stricter weight parsing with format validation and range checking (0-2000)
+- Expanded workout view now shows "Click to collapse" instead of duplicate name
+
+### Security
+- Exercise ownership verification in logExerciseSet() prevents cross-user data access
+- LinkGroupId now scoped per-user to prevent cross-user sync collisions
+- Constant-time password comparison using crypto.timingSafeEqual() prevents timing attacks
+- All database operations wrapped in try/catch with proper error logging
 
 ### Fixed
 - Trash button when creating a routine now works (shows confirmation dialog)
 - X button on exercise now clears the name field instead of deleting (delete moved to trash icon)
+- Toast memory leak - added timeout tracking and cleanup
+- Modal close race condition - delayed state clearing prevents data loss
+- N+1 query pattern in getUserWorkoutDayIds() - consolidated to 2 queries
+- O(n²) streak calculations optimized to O(n) using Map lookups
+- JSON parsing errors now caught with proper error handling
+- Null checks added in linked exercise weight sync
+- syncSessionToCalendar() now has proper error handling
+- generateWorkoutSummary() defensive coding for malformed data
+- Unused loop variable removed from Calendar.svelte
+- Implicit type coercion fixed in day of week comparison
+- Null display name handling in stats with proper fallbacks
+- TypeScript errors in +page.svelte with explicit type annotations
+- Accessibility improvements for calendar day cells (aria-labels)
 
 ## [0.4.0] - 2026-01-16
 
