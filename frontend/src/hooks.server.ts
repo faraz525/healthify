@@ -1,10 +1,22 @@
 import type { Handle } from '@sveltejs/kit';
 import { redirect } from '@sveltejs/kit';
-import { validateSession } from '$lib/server/auth';
+import { validateSession, cleanExpiredSessions } from '$lib/server/auth';
 
 const PUBLIC_PATHS = ['/login', '/signup'];
 
+// Periodically clean expired sessions (every ~100 requests)
+let requestCount = 0;
+const CLEANUP_INTERVAL = 100;
+
 export const handle: Handle = async ({ event, resolve }) => {
+  // Periodic session cleanup
+  requestCount++;
+  if (requestCount >= CLEANUP_INTERVAL) {
+    requestCount = 0;
+    // Run cleanup asynchronously to not block the request
+    cleanExpiredSessions();
+  }
+
   const sessionId = event.cookies.get('session');
 
   if (sessionId) {

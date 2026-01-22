@@ -65,9 +65,9 @@ export function getStats(userId: string, days = 30): Stats {
     .all();
 
   const commonIssues: CommonIssue[] = issueCountsResult.map(r => ({
-    type: r.issueType,
-    displayName: r.displayName || r.issueType.replace(/_/g, ' '),
-    count: r.count
+    type: r.issueType ?? 'unknown',
+    displayName: r.displayName ?? (r.issueType ? r.issueType.replace(/_/g, ' ') : 'Unknown Issue'),
+    count: r.count ?? 0
   }));
 
   // Calculate entry streak (consecutive days with entries)
@@ -123,6 +123,9 @@ function calculateWorkoutStreak(userId: string): number {
     orderBy: desc(dailyEntries.date)
   }).sync();
 
+  // Use Map for O(1) lookup instead of .find() which is O(n)
+  const entriesByDate = new Map(allEntries.map(e => [e.date, e]));
+
   let streak = 0;
   const today = new Date();
 
@@ -131,7 +134,7 @@ function calculateWorkoutStreak(userId: string): number {
     checkDate.setDate(checkDate.getDate() - i);
     const dateStr = checkDate.toISOString().split('T')[0];
 
-    const entry = allEntries.find(e => e.date === dateStr);
+    const entry = entriesByDate.get(dateStr);
 
     if (entry && entry.workedOut) {
       streak++;

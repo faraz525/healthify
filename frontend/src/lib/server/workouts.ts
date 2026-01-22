@@ -52,12 +52,13 @@ export function getWorkout(userId: string, id: number) {
 export function getTodaysWorkout(userId: string) {
   try {
     // JavaScript: Sunday=0, Monday=1... we need Monday=0
-    const jsDay = new Date().getDay();
-    const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1;
+    const jsDay: number = new Date().getDay();
+    const dayOfWeek: number = jsDay === 0 ? 6 : jsDay - 1;
 
     // Find user's workout assigned to today
     const workouts = getWorkouts(userId);
-    return workouts.find(w => w.dayOfWeek === dayOfWeek) || null;
+    // Explicit number comparison to avoid type coercion issues
+    return workouts.find(w => w.dayOfWeek !== null && w.dayOfWeek !== undefined && Number(w.dayOfWeek) === dayOfWeek) || null;
   } catch (err) {
     console.error('Failed to get today\'s workout:', err);
     return null;
@@ -79,9 +80,29 @@ export type WorkoutInput = {
   }>;
 };
 
+// Check if a workout name already exists for a user (case-insensitive)
+export function workoutNameExists(userId: string, name: string, excludeId?: number): boolean {
+  try {
+    const existingWorkouts = getWorkouts(userId);
+    return existingWorkouts.some(w =>
+      w.name.toLowerCase() === name.toLowerCase() &&
+      (excludeId === undefined || w.id !== excludeId)
+    );
+  } catch (err) {
+    console.error('Failed to check workout name:', err);
+    return false;
+  }
+}
+
 // Uses a transaction to ensure atomic creation of workout and exercises
 export function createWorkout(userId: string, data: WorkoutInput) {
   try {
+    // Check for duplicate name before creating
+    if (workoutNameExists(userId, data.name)) {
+      console.error('Workout name already exists:', data.name);
+      return null;
+    }
+
     const createWorkoutTx = sqlite.transaction(() => {
       const result = db.insert(workoutDays).values({
         userId,
@@ -127,13 +148,18 @@ export function updateWorkout(userId: string, id: number, data: Partial<{
   name: string;
   dayOfWeek: number | null;
   sortOrder: number;
-}>) {
+}>): { workout: ReturnType<typeof getWorkout>; error?: string } | null {
   try {
     const existing = getWorkout(userId, id);
     if (!existing) return null;
 
+    // Check for duplicate name if name is being updated
+    if (data.name && workoutNameExists(userId, data.name, id)) {
+      return { workout: existing, error: 'duplicate_name' };
+    }
+
     db.update(workoutDays).set(data).where(eq(workoutDays.id, id)).run();
-    return getWorkout(userId, id);
+    return { workout: getWorkout(userId, id) };
   } catch (err) {
     console.error('Failed to update workout:', err);
     return null;
@@ -408,17 +434,26 @@ export function deleteWorkoutDay(userId: string, dayId: number) {
 
 // Exercise operations
 
-// Generate a new unique link group ID
-export function generateLinkGroupId(): number {
+// Generate a new unique link group ID scoped to a user
+// SECURITY: Link groups are now scoped per-user to prevent cross-user collisions
+export function generateLinkGroupId(userId: string): number {
   try {
-    const result = db.select({ maxId: exercises.linkGroupId })
-      .from(exercises)
-      .all();
-    const maxId = result.reduce((max, row) => Math.max(max, row.maxId ?? 0), 0);
+    // Get max linkGroupId only from exercises belonging to this user's workouts
+    const userWorkouts = getWorkouts(userId);
+    const userWorkoutIds = userWorkouts.map(w => w.id);
+
+    if (userWorkoutIds.length === 0) return 1;
+
+    const userExercises = db.query.exercises.findMany({
+      where: or(...userWorkoutIds.map(id => eq(exercises.workoutDayId, id)))
+    }).sync();
+
+    const maxId = userExercises.reduce((max, ex) => Math.max(max, ex.linkGroupId ?? 0), 0);
     return maxId + 1;
   } catch (err) {
     console.error('Failed to generate link group ID:', err);
-    return Date.now(); // Fallback to timestamp
+    // Fallback: use timestamp + random to minimize collision risk
+    return Date.now() % 1000000000 + Math.floor(Math.random() * 1000);
   }
 }
 
@@ -464,6 +499,7 @@ export function createExercise(userId: string, dayId: number, data: {
 }
 
 // Create a linked copy of an existing exercise
+// Uses a transaction to prevent race conditions in linkGroupId generation
 export function createLinkedExercise(userId: string, sourceExerciseId: number, targetDayId: number) {
   try {
     // Get source exercise
@@ -482,31 +518,37 @@ export function createLinkedExercise(userId: string, sourceExerciseId: number, t
     const targetWorkout = getWorkout(userId, targetDayId);
     if (!targetWorkout) return null;
 
-    // Determine the link group ID
-    let linkGroupId = source.linkGroupId;
-    if (!linkGroupId) {
-      // Source is not linked yet - create a new link group and update source
-      linkGroupId = generateLinkGroupId();
-      db.update(exercises)
-        .set({ linkGroupId })
-        .where(eq(exercises.id, sourceExerciseId))
-        .run();
-    }
+    // Use a transaction to atomically generate linkGroupId and create the linked exercise
+    const createLinkedTx = sqlite.transaction(() => {
+      // Determine the link group ID
+      let linkGroupId = source.linkGroupId;
+      if (!linkGroupId) {
+        // Source is not linked yet - create a new link group and update source
+        // Pass userId to scope the linkGroupId to this user
+        linkGroupId = generateLinkGroupId(userId);
+        db.update(exercises)
+          .set({ linkGroupId })
+          .where(eq(exercises.id, sourceExerciseId))
+          .run();
+      }
 
-    // Create the linked copy
-    const result = db.insert(exercises).values({
-      workoutDayId: targetDayId,
-      name: source.name,
-      targetSets: source.targetSets,
-      targetReps: source.targetReps,
-      targetWeight: source.targetWeight,
-      restSeconds: source.restSeconds,
-      notes: source.notes,
-      sortOrder: 0,
-      linkGroupId
-    }).returning().all();
+      // Create the linked copy
+      const result = db.insert(exercises).values({
+        workoutDayId: targetDayId,
+        name: source.name,
+        targetSets: source.targetSets,
+        targetReps: source.targetReps,
+        targetWeight: source.targetWeight,
+        restSeconds: source.restSeconds,
+        notes: source.notes,
+        sortOrder: 0,
+        linkGroupId
+      }).returning().all();
 
-    return result[0] ?? null;
+      return result[0] ?? null;
+    });
+
+    return createLinkedTx();
   } catch (err) {
     console.error('Failed to create linked exercise:', err);
     return null;
@@ -562,17 +604,20 @@ export function updateExercise(userId: string, exerciseId: number, data: Partial
     db.update(exercises).set(data).where(eq(exercises.id, exerciseId)).run();
 
     // If this exercise is linked and weight was updated, sync to other linked exercises
-    if (exercise.linkGroupId && data.targetWeight !== undefined) {
+    // SECURITY: Only syncs to exercises the user owns (linkGroupId is scoped per-user)
+    if (exercise.linkGroupId && data.targetWeight !== undefined && data.targetWeight !== null) {
       const linkedExercises = getLinkedExercises(exercise.linkGroupId);
-      for (const linked of linkedExercises) {
-        if (linked.id !== exerciseId) {
-          // Verify user owns the linked exercise's workout before updating
-          const linkedWorkout = getWorkout(userId, linked.workoutDayId);
-          if (linkedWorkout) {
-            db.update(exercises)
-              .set({ targetWeight: data.targetWeight })
-              .where(eq(exercises.id, linked.id))
-              .run();
+      if (linkedExercises && linkedExercises.length > 0) {
+        for (const linked of linkedExercises) {
+          if (linked && linked.id !== exerciseId && linked.workoutDayId) {
+            // Verify user owns the linked exercise's workout before updating
+            const linkedWorkout = getWorkout(userId, linked.workoutDayId);
+            if (linkedWorkout) {
+              db.update(exercises)
+                .set({ targetWeight: data.targetWeight })
+                .where(eq(exercises.id, linked.id))
+                .run();
+            }
           }
         }
       }

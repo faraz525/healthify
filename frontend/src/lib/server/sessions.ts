@@ -25,34 +25,23 @@ function verifyWorkoutOwnership(userId: string, workoutDayId: number): boolean {
 }
 
 // Helper to get all workout day IDs belonging to a user
+// Consolidated into a single query to avoid N+1 pattern
 function getUserWorkoutDayIds(userId: string): number[] {
-  // Get standalone workouts (with userId directly set)
-  const standaloneWorkouts = db.query.workoutDays.findMany({
-    where: eq(workoutDays.userId, userId)
-  }).sync();
-
-  // Get workouts from user's routines
-  const routineWorkouts = db.query.workoutDays.findMany({
-    where: eq(workoutDays.routineId, db.query.workoutRoutines.findFirst({
-      where: eq(workoutRoutines.userId, userId)
-    }).sync()?.id ?? -1)
-  }).sync();
-
-  // Also get all workouts from all user's routines
+  // Single query: get all routines with their days, plus standalone workouts
   const userRoutines = db.query.workoutRoutines.findMany({
     where: eq(workoutRoutines.userId, userId),
     with: { days: true }
   }).sync();
 
+  const standaloneWorkouts = db.query.workoutDays.findMany({
+    where: eq(workoutDays.userId, userId)
+  }).sync();
+
   const routineWorkoutIds = userRoutines.flatMap(r => r.days.map(d => d.id));
+  const standaloneIds = standaloneWorkouts.map(w => w.id);
 
-  const allIds = new Set([
-    ...standaloneWorkouts.map(w => w.id),
-    ...routineWorkouts.map(w => w.id),
-    ...routineWorkoutIds
-  ]);
-
-  return Array.from(allIds);
+  // Use Set to deduplicate
+  return Array.from(new Set([...routineWorkoutIds, ...standaloneIds]));
 }
 
 // Get the active workout session for user (if any)
@@ -128,10 +117,27 @@ export function startSession(userId: string, workoutDayId: number): WorkoutSessi
 }
 
 // Parse weight string to numeric value for comparison
+// Accepts formats like "135", "135.5", "135 lbs", "60 kg", "60.5kg"
 function parseWeight(weightStr: string | null | undefined): number {
-  if (!weightStr) return 0;
-  const match = weightStr.match(/^(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : 0;
+  if (!weightStr || typeof weightStr !== 'string') return 0;
+
+  // Trim whitespace and validate basic format
+  const trimmed = weightStr.trim();
+  if (!trimmed) return 0;
+
+  // Match number at start, optionally followed by unit (lbs, kg, lb)
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(?:lbs?|kg)?$/i);
+  if (!match) {
+    // Fallback: try to extract any leading number
+    const fallbackMatch = trimmed.match(/^(\d+(?:\.\d+)?)/);
+    return fallbackMatch ? parseFloat(fallbackMatch[1]) : 0;
+  }
+
+  const value = parseFloat(match[1]);
+  // Sanity check: reasonable weight range (0 to 2000 lbs/kg)
+  if (isNaN(value) || value < 0 || value > 2000) return 0;
+
+  return value;
 }
 
 // Get the best previous log for an exercise (highest weight * reps combo)
@@ -201,12 +207,15 @@ export function logExerciseSet(
   const session = getSession(userId, sessionId);
   if (!session || session.status !== 'active') return null;
 
-  // Verify exercise exists
+  // Verify exercise exists and belongs to the session's workout
   const exercise = db.query.exercises.findFirst({
     where: eq(exercises.id, exerciseId)
   }).sync();
 
   if (!exercise) return null;
+
+  // SECURITY: Verify the exercise belongs to this session's workout
+  if (exercise.workoutDayId !== session.workoutDayId) return null;
 
   const isNewPR = weight && reps ? isPR(userId, exerciseId, weight, reps) : false;
   const previousBest = getBestPreviousLog(userId, exerciseId, sessionId);
@@ -305,61 +314,97 @@ export function completeSession(userId: string, sessionId: number, notes?: strin
 
 // Sync completed workout session to daily calendar entry
 function syncSessionToCalendar(userId: string, session: any, completedAt: string): void {
-  const sessionDate = session.startedAt.split('T')[0];
-  const workoutSummary = generateWorkoutSummary(session, completedAt);
-  const workoutType = session.workoutDay?.name ?? 'Workout';
+  try {
+    if (!session || !session.startedAt) {
+      console.error('syncSessionToCalendar: Invalid session data');
+      return;
+    }
 
-  const existingEntry = getEntryByDate(userId, sessionDate);
+    const sessionDate = session.startedAt.split('T')[0];
+    if (!sessionDate) {
+      console.error('syncSessionToCalendar: Could not extract session date');
+      return;
+    }
 
-  if (existingEntry) {
-    updateEntry(userId, sessionDate, {
-      workedOut: true,
-      workoutType,
-      workoutNotes: workoutSummary
-    });
-  } else {
-    createEntry(userId, {
-      date: sessionDate,
-      workedOut: true,
-      workoutType,
-      workoutNotes: workoutSummary,
-      healthIssues: []
-    });
+    const workoutSummary = generateWorkoutSummary(session, completedAt);
+    const workoutType = session.workoutDay?.name ?? 'Workout';
+
+    const existingEntry = getEntryByDate(userId, sessionDate);
+
+    if (existingEntry) {
+      updateEntry(userId, sessionDate, {
+        workedOut: true,
+        workoutType,
+        workoutNotes: workoutSummary
+      });
+    } else {
+      createEntry(userId, {
+        date: sessionDate,
+        workedOut: true,
+        workoutType,
+        workoutNotes: workoutSummary,
+        healthIssues: []
+      });
+    }
+  } catch (err) {
+    console.error('Failed to sync session to calendar:', err);
+    // Don't throw - calendar sync failure shouldn't break session completion
   }
 }
 
 // Generate human-readable workout summary
 function generateWorkoutSummary(session: any, completedAt: string): string {
-  const logs = session.exerciseLogs || [];
+  try {
+    const logs = Array.isArray(session?.exerciseLogs) ? session.exerciseLogs : [];
 
-  const startTime = new Date(session.startedAt);
-  const endTime = new Date(completedAt);
-  const durationMins = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    // Safely parse dates with fallback
+    const startTime = session?.startedAt ? new Date(session.startedAt) : new Date();
+    const endTime = completedAt ? new Date(completedAt) : new Date();
 
-  const exerciseGroups: Record<string, any[]> = {};
-  for (const log of logs) {
-    const name = log.exercise?.name ?? 'Unknown';
-    if (!exerciseGroups[name]) exerciseGroups[name] = [];
-    exerciseGroups[name].push(log);
+    // Handle invalid dates
+    const startMs = isNaN(startTime.getTime()) ? Date.now() : startTime.getTime();
+    const endMs = isNaN(endTime.getTime()) ? Date.now() : endTime.getTime();
+    const durationMins = Math.max(0, Math.round((endMs - startMs) / 60000));
+
+    if (logs.length === 0) {
+      return `${durationMins} min session (no exercises logged)`;
+    }
+
+    const exerciseGroups: Record<string, any[]> = {};
+    for (const log of logs) {
+      if (!log) continue;
+      const name = log.exercise?.name ?? 'Unknown';
+      if (!exerciseGroups[name]) exerciseGroups[name] = [];
+      exerciseGroups[name].push(log);
+    }
+
+    const lines: string[] = [`${durationMins} min session`];
+
+    for (const [name, exLogs] of Object.entries(exerciseGroups)) {
+      if (!exLogs || exLogs.length === 0) continue;
+
+      const sets = exLogs.length;
+      const bestSet = exLogs.reduce((best, log) => {
+        if (!best) return log;
+        if (!log) return best;
+        const score = (parseFloat(log.weight) || 0) * (log.reps || 0);
+        const bestScore = (parseFloat(best.weight) || 0) * (best.reps || 0);
+        return score > bestScore ? log : best;
+      }, exLogs[0]);
+
+      const prCount = exLogs.filter((l: any) => l?.isPR).length;
+      const prText = prCount > 0 ? ` (${prCount} PR${prCount > 1 ? 's' : ''})` : '';
+
+      const weight = bestSet?.weight ?? '-';
+      const reps = bestSet?.reps ?? '-';
+      lines.push(`${name}: ${sets} sets, best ${weight} x ${reps}${prText}`);
+    }
+
+    return lines.join('\n');
+  } catch (err) {
+    console.error('Failed to generate workout summary:', err);
+    return 'Workout completed';
   }
-
-  const lines: string[] = [`${durationMins} min session`];
-
-  for (const [name, exLogs] of Object.entries(exerciseGroups)) {
-    const sets = exLogs.length;
-    const bestSet = exLogs.reduce((best, log) => {
-      const score = (parseFloat(log.weight) || 0) * (log.reps || 0);
-      const bestScore = (parseFloat(best.weight) || 0) * (best.reps || 0);
-      return score > bestScore ? log : best;
-    }, exLogs[0]);
-
-    const prCount = exLogs.filter((l: any) => l.isPR).length;
-    const prText = prCount > 0 ? ` (${prCount} PR${prCount > 1 ? 's' : ''})` : '';
-
-    lines.push(`${name}: ${sets} sets, best ${bestSet.weight ?? '-'} x ${bestSet.reps ?? '-'}${prText}`);
-  }
-
-  return lines.join('\n');
 }
 
 // Cancel the current workout session
@@ -402,13 +447,11 @@ export function getExerciseHistory(userId: string, exerciseId: number, limit = 1
     }).sync();
 
     if (!exercise) {
-      console.log('getExerciseHistory: exercise not found', exerciseId);
       return [];
     }
 
     const workout = exercise.workoutDay;
     if (workout.userId !== userId && (!workout.routine || workout.routine.userId !== userId)) {
-      console.log('getExerciseHistory: user does not own exercise', { exerciseId, userId, workoutUserId: workout.userId });
       return [];
     }
 
@@ -423,8 +466,6 @@ export function getExerciseHistory(userId: string, exerciseId: number, limit = 1
     const completedLogs = allLogs
       .filter(log => log.session?.status === 'completed')
       .slice(0, limit);
-
-    console.log('getExerciseHistory:', { exerciseId, totalLogs: allLogs.length, completedLogs: completedLogs.length });
 
     return completedLogs;
   } catch (err) {

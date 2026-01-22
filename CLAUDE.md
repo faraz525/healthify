@@ -92,11 +92,31 @@ export function getData(userId: string) {
 
 - **Always filter by userId** - never trust client data for user identity
 
+- **Validate uniqueness server-side** for user-facing names:
+```typescript
+export function workoutNameExists(userId: string, name: string, excludeId?: number): boolean {
+  const workouts = getWorkouts(userId);
+  return workouts.some(w =>
+    w.name.toLowerCase() === name.toLowerCase() &&
+    (excludeId === undefined || w.id !== excludeId)
+  );
+}
+```
+
+- **Use defensive coding** for data from external sources:
+```typescript
+// Handle potentially malformed data
+const logs = Array.isArray(session?.exerciseLogs) ? session.exerciseLogs : [];
+const value = isNaN(parsed) ? defaultValue : parsed;
+```
+
 ### Authentication
 - Cookie-based sessions (30-day expiry)
 - `hooks.server.ts` validates session and populates `locals.user`
 - Protected routes redirect to `/login` if no session
 - Passwords hashed with bcrypt (compatible with old backend)
+- Use `crypto.timingSafeEqual()` for password comparisons to prevent timing attacks
+- Expired sessions cleaned up periodically via `cleanExpiredSessions()`
 
 ### Rate Limiting
 - Login: 5 attempts per IP per minute
@@ -143,6 +163,18 @@ export function getData(userId: string) {
    ```
 
 4. **Schema/ORM mismatch**: Keep Drizzle schema in sync with actual DB tables
+
+5. **Allowing duplicate user-facing names**: Validate uniqueness server-side
+   ```typescript
+   // BAD - allows duplicate workout names
+   const workout = createWorkout(userId, { name });
+
+   // GOOD - check before creating
+   if (workoutNameExists(userId, name)) {
+     return fail(400, { error: 'Name already exists' });
+   }
+   const workout = createWorkout(userId, { name });
+   ```
 
 ## Database
 

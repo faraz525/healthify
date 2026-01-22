@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex, index } from 'drizzle-orm/sqlite-core';
 import { relations } from 'drizzle-orm';
 
 // Users table
@@ -17,7 +17,10 @@ export const sessions = sqliteTable('sessions', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   expiresAt: text('expires_at').notNull(),
   createdAt: text('created_at').default('CURRENT_TIMESTAMP')
-});
+}, (table) => ({
+  userIdIdx: index('idx_sessions_user_id').on(table.userId),
+  expiresAtIdx: index('idx_sessions_expires_at').on(table.expiresAt)
+}));
 
 // Refresh Tokens table for token-based auth
 export const refreshTokens = sqliteTable('refresh_tokens', {
@@ -55,7 +58,9 @@ export const healthIssues = sqliteTable('health_issues', {
   notes: text('notes'),
   timeOfDay: text('time_of_day'),
   createdAt: text('created_at').default('CURRENT_TIMESTAMP')
-});
+}, (table) => ({
+  dailyEntryIdIdx: index('idx_health_issues_daily_entry_id').on(table.dailyEntryId)
+}));
 
 // Issue Types table
 export const issueTypes = sqliteTable('issue_types', {
@@ -177,7 +182,10 @@ export const workoutSessions = sqliteTable('workout_sessions', {
   startedAt: text('started_at').notNull(),
   completedAt: text('completed_at'),
   notes: text('notes')
-});
+}, (table) => ({
+  workoutDayIdIdx: index('idx_workout_sessions_workout_day_id').on(table.workoutDayId),
+  statusIdx: index('idx_workout_sessions_status').on(table.status)
+}));
 
 // Exercise Logs table - tracks individual exercise completions with weight/reps
 export const exerciseLogs = sqliteTable('exercise_logs', {
@@ -189,7 +197,10 @@ export const exerciseLogs = sqliteTable('exercise_logs', {
   reps: integer('reps'),
   isPR: integer('is_pr', { mode: 'boolean' }).default(false),
   completedAt: text('completed_at').notNull()
-});
+}, (table) => ({
+  sessionIdIdx: index('idx_exercise_logs_session_id').on(table.sessionId),
+  exerciseIdIdx: index('idx_exercise_logs_exercise_id').on(table.exerciseId)
+}));
 
 // Relations for workout sessions
 export const workoutSessionsRelations = relations(workoutSessions, ({ one, many }) => ({

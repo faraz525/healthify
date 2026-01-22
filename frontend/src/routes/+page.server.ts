@@ -1,5 +1,18 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
+
+// Helper to safely parse integers with validation
+function safeParseInt(value: FormDataEntryValue | null, fieldName: string): number | { error: string } {
+  if (value === null || value === '') {
+    return { error: `${fieldName} is required` };
+  }
+  const parsed = parseInt(value as string, 10);
+  if (isNaN(parsed)) {
+    return { error: `Invalid ${fieldName}` };
+  }
+  return parsed;
+}
+
 import {
   getWorkouts,
   getTodaysWorkout,
@@ -113,6 +126,9 @@ export const actions: Actions = {
     }
 
     const workout = createWorkout(userId, { name, dayOfWeek });
+    if (!workout) {
+      return fail(400, { error: 'A workout with this name already exists' });
+    }
     return { success: true, workout };
   },
 
@@ -122,14 +138,23 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string);
-    const data = JSON.parse(formData.get('data') as string);
 
-    const workout = updateWorkout(userId, id, data);
-    if (!workout) {
-      return fail(404, { error: 'Workout not found' });
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
     }
 
-    return { success: true, workout };
+    const result = updateWorkout(userId, id, data);
+    if (!result) {
+      return fail(404, { error: 'Workout not found' });
+    }
+    if (result.error === 'duplicate_name') {
+      return fail(400, { error: 'A workout with this name already exists' });
+    }
+
+    return { success: true, workout: result.workout };
   },
 
   deleteWorkout: async ({ request, locals }) => {
@@ -153,7 +178,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const dayId = parseInt(formData.get('dayId') as string);
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const exercise = createExercise(userId, dayId, data);
     if (!exercise) {
@@ -169,7 +200,13 @@ export const actions: Actions = {
     const userId = locals.user.id;
     const formData = await request.formData();
     const exerciseId = parseInt(formData.get('exerciseId') as string);
-    const data = JSON.parse(formData.get('data') as string);
+
+    let data;
+    try {
+      data = JSON.parse(formData.get('data') as string);
+    } catch {
+      return fail(400, { error: 'Invalid data format' });
+    }
 
     const exercise = updateExercise(userId, exerciseId, data);
     if (!exercise) {

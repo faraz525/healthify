@@ -22,6 +22,22 @@
   // Check if workout notes contain PR (from auto-synced sessions)
   let hasPR = $derived(workoutNotes?.includes('PR') ?? false);
 
+  // Build accessible label for screen readers
+  let ariaLabel = $derived.by(() => {
+    const parts = [`Day ${day}`];
+    if (isToday) parts.push('(today)');
+    if (isFuture) parts.push('(future date)');
+    if (hasEntry) {
+      if (hasWorkout) parts.push('worked out');
+      if (stressLevel !== null) parts.push(`stress level ${stressLevel}`);
+      if (hasIssues) parts.push(`${entry?.healthIssues.length} health issues`);
+      if (hasPR) parts.push('personal record');
+    } else if (!isFuture) {
+      parts.push('no entry');
+    }
+    return parts.join(', ');
+  });
+
   function getStressColor(level: number | null): string {
     if (level === null) return 'transparent';
     if (level <= 3) return 'var(--color-success)';
@@ -37,6 +53,7 @@
     {hasEntry && !isToday ? 'bg-(--color-bg-hover)' : ''}
     max-sm:min-h-12 max-sm:min-w-12 max-sm:gap-0.5 max-sm:p-1 max-sm:rounded-lg"
   disabled={isFuture}
+  aria-label={ariaLabel}
   {onclick}
 >
   <span class="text-base font-medium text-(--color-text) {isToday ? 'text-(--color-primary) font-bold' : ''} max-sm:text-sm">{day}</span>
