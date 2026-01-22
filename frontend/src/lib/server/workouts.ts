@@ -80,9 +80,29 @@ export type WorkoutInput = {
   }>;
 };
 
+// Check if a workout name already exists for a user (case-insensitive)
+export function workoutNameExists(userId: string, name: string, excludeId?: number): boolean {
+  try {
+    const existingWorkouts = getWorkouts(userId);
+    return existingWorkouts.some(w =>
+      w.name.toLowerCase() === name.toLowerCase() &&
+      (excludeId === undefined || w.id !== excludeId)
+    );
+  } catch (err) {
+    console.error('Failed to check workout name:', err);
+    return false;
+  }
+}
+
 // Uses a transaction to ensure atomic creation of workout and exercises
 export function createWorkout(userId: string, data: WorkoutInput) {
   try {
+    // Check for duplicate name before creating
+    if (workoutNameExists(userId, data.name)) {
+      console.error('Workout name already exists:', data.name);
+      return null;
+    }
+
     const createWorkoutTx = sqlite.transaction(() => {
       const result = db.insert(workoutDays).values({
         userId,
@@ -128,13 +148,18 @@ export function updateWorkout(userId: string, id: number, data: Partial<{
   name: string;
   dayOfWeek: number | null;
   sortOrder: number;
-}>) {
+}>): { workout: ReturnType<typeof getWorkout>; error?: string } | null {
   try {
     const existing = getWorkout(userId, id);
     if (!existing) return null;
 
+    // Check for duplicate name if name is being updated
+    if (data.name && workoutNameExists(userId, data.name, id)) {
+      return { workout: existing, error: 'duplicate_name' };
+    }
+
     db.update(workoutDays).set(data).where(eq(workoutDays.id, id)).run();
-    return getWorkout(userId, id);
+    return { workout: getWorkout(userId, id) };
   } catch (err) {
     console.error('Failed to update workout:', err);
     return null;

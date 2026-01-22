@@ -126,6 +126,9 @@ export const actions: Actions = {
     }
 
     const workout = createWorkout(userId, { name, dayOfWeek });
+    if (!workout) {
+      return fail(400, { error: 'A workout with this name already exists' });
+    }
     return { success: true, workout };
   },
 
@@ -143,12 +146,15 @@ export const actions: Actions = {
       return fail(400, { error: 'Invalid data format' });
     }
 
-    const workout = updateWorkout(userId, id, data);
-    if (!workout) {
+    const result = updateWorkout(userId, id, data);
+    if (!result) {
       return fail(404, { error: 'Workout not found' });
     }
+    if (result.error === 'duplicate_name') {
+      return fail(400, { error: 'A workout with this name already exists' });
+    }
 
-    return { success: true, workout };
+    return { success: true, workout: result.workout };
   },
 
   deleteWorkout: async ({ request, locals }) => {

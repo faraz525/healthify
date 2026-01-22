@@ -989,13 +989,19 @@
                 class="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-(--color-bg-hover)/50 transition-colors"
                 onclick={() => expandedWorkoutId = isExpanded ? null : workout.id!}
               >
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 mb-1">
-                    <span class="px-2 py-0.5 bg-(--color-bg) border border-(--color-border) rounded text-xs font-semibold text-(--color-text-muted)">{getDayName(workout.dayOfWeek)}</span>
+                {#if !isExpanded}
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="px-2 py-0.5 bg-(--color-bg) border border-(--color-border) rounded text-xs font-semibold text-(--color-text-muted)">{getDayName(workout.dayOfWeek)}</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-(--color-text) truncate">{workout.name}</h3>
+                    <p class="text-sm text-(--color-text-muted)">{workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}</p>
                   </div>
-                  <h3 class="text-lg font-bold text-(--color-text) truncate">{workout.name}</h3>
-                  <p class="text-sm text-(--color-text-muted)">{workout.exercises.length} exercise{workout.exercises.length !== 1 ? 's' : ''}</p>
-                </div>
+                {:else}
+                  <div class="flex-1 min-w-0">
+                    <span class="text-sm text-(--color-text-muted)">Click to collapse</span>
+                  </div>
+                {/if}
                 <div class="flex items-center gap-2">
                   <svg
                     width="20"
